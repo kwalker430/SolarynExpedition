@@ -1,19 +1,9 @@
 --[[---------------------------------------------------------------------------
-    Solaryn's Expedition — slash commands.
+    Solaryn's Expedition — slash commands (/sol, also /expedition).
 
-      /sol                 toggle the panel
-      /sol help            command list
-      /sol suggestions     print the current suggestions to chat
-      /sol route           rebuild and print the route
-      /sol next            set a waypoint to the next route stop
-      /sol map             open the map at the next stop
-      /sol pin <questID>   record a hand-verified objective override
-      /sol chain <from> <to>
-      /sol zones           list tracked zones and coverage
-      /sol zone reset [all]
-      /sol options         toggle the options panel
-      /sol api             report live API return shapes
-      /sol debug           toggle debug logging
+    HELP below is the single reference for every command: /sol help prints
+    it, /sol help <command> shows one entry in full, and the test suite checks
+    it matches the COMMANDS table and README.md, so neither can drift.
 -----------------------------------------------------------------------------]]
 
 local ADDON_NAME = ...
@@ -30,6 +20,71 @@ local function printList(lines, header)
     DEFAULT_CHAT_FRAME:AddMessage("|cff82c8ffSolaryn|r " .. (header or ""))
     for _, line in ipairs(lines) do
         DEFAULT_CHAT_FRAME:AddMessage("  " .. line)
+    end
+end
+
+---------------------------------------------------------------------------
+-- Command reference
+---------------------------------------------------------------------------
+-- { name, args, summary, details, example }. name "" is bare /sol.
+local HELP = {
+    { group = "Panel & guide", commands = {
+        { "", "", "Open or close the panel",
+          "Three tabs: Next (what to do now, nearest first), Route (your stops in walking order) and Zones (where to level next and what you've explored)." },
+        { "next", "", "Start the guide at the next stop",
+          "Puts a waypoint on the next stop and follows the route for you: when a quest's work is done (or it's handed in) the waypoint moves on by itself." },
+        { "skip", "", "Skip the current stop",
+          "Moves the guide to the following stop. Handy when you want to come back to something later." },
+        { "stop", "", "Stop the guide",
+          "Stops following the route. The route itself is kept; /sol next picks it up again." },
+        { "route", "", "Rebuild the route and print it",
+          "Re-orders your quest log into a walking route from where you stand, finishing nearby objectives before hand-ins." },
+        { "map", "", "Open the world map at the current stop",
+          "Opens the map on the zone of the stop you're heading to. Route stops are drawn on the map as numbered pins." },
+        { "hud", "", "Show or hide the route tracker",
+          "The on-screen tracker shows the current stop, its objectives, a direction arrow, upcoming stops and quest item buttons." },
+        { "options", "", "Open the options window",
+          "Route behaviour, tracker, tooltips, exploration tracking and suggestion weights." },
+    } },
+    { group = "Quests", commands = {
+        { "suggestions", "", "Print what to do next to chat",
+          "The same list as the panel's Next tab: hand-ins, objectives nearest first, and a new zone when you've outgrown yours." },
+        { "where", "", "Show where each quest's location comes from",
+          "For every quest in your log, prints which location source answered (world-map marker, waypoint, learned NPC...) or 'none'. Useful when a quest has no pin.",
+          "/sol where" },
+        { "pin", "<questID>", "Record an objective's real position",
+          "Stand where the objective really is and run this: the position is saved and used instead of the client's for that quest (all characters). With no quest ID it lists the quests in your log with their IDs.",
+          "/sol pin 1001" },
+        { "chain", "<from> <to>", "Record that one quest leads to another",
+          "Links a quest to its follow-up so later steps of a chain you've started rank higher. Chains are also learned automatically when you hand in and accept.",
+          "/sol chain 1001 1003" },
+    } },
+    { group = "Zones & exploration", commands = {
+        { "zones", "", "Print exploration coverage per zone",
+          "Coverage comes from your 'Explore <Zone>' achievement when there is one (areas found of the total), otherwise from your world map and where you've walked." },
+        { "zone", "reset [all]", "Clear the addon's exploration data",
+          "'reset' clears the zone you're in, 'reset all' clears every zone. Your world map and achievements are untouched and are read back in on the next update.",
+          "/sol zone reset" },
+    } },
+    { group = "Help & troubleshooting", commands = {
+        { "help", "[command]", "This list, or details for one command", nil, "/sol help pin" },
+        { "api", "", "Report what this client supports",
+          "Lists the game APIs the addon found (quest markers, fog of war, zone levels...). Include this when reporting a problem." },
+        { "debug", "", "Toggle debug messages",
+          "Prints internal errors the addon caught instead of keeping them silent." },
+    } },
+}
+Slash.HELP = HELP
+
+local function usage(c)
+    return "/sol" .. (c[1] ~= "" and (" " .. c[1]) or "") .. (c[2] ~= "" and (" " .. c[2]) or "")
+end
+
+local function findHelp(name)
+    for _, g in ipairs(HELP) do
+        for _, c in ipairs(g.commands) do
+            if c[1] == name then return c end
+        end
     end
 end
 
@@ -91,25 +146,26 @@ end
 ---------------------------------------------------------------------------
 local COMMANDS = {}
 
-function COMMANDS.help()
-    printList({
-        "/sol                  toggle panel",
-        "/sol suggestions      print suggestions to chat",
-        "/sol route            rebuild route",
-        "/sol next             start the guide at the next stop",
-        "/sol skip             skip the current stop",
-        "/sol stop             stop the guide",
-        "/sol hud              show/hide the route tracker",
-        "/sol map              open map at next stop",
-        "/sol pin <questID>    pin your position as an objective",
-        "/sol chain <from> <to> record a quest follow-up",
-        "/sol zones            zone coverage list",
-        "/sol zone reset [all] clear zone data",
-        "/sol options          options panel",
-        "/sol api              report live API return shapes",
-        "/sol where            show every location source for each quest",
-        "/sol debug            toggle debug logging",
-    }, "commands:")
+function COMMANDS.help(arg)
+    local name = ((arg or ""):match("^%s*(%S*)") or ""):lower():gsub("^/sol%s*", "")
+    local c = name ~= "" and findHelp(name)
+    if c then
+        DEFAULT_CHAT_FRAME:AddMessage(string.format("|cff82c8ffSolaryn|r |cffffd100%s|r  %s", usage(c), c[3]))
+        if c[4] then DEFAULT_CHAT_FRAME:AddMessage("  " .. c[4]) end
+        if c[5] then DEFAULT_CHAT_FRAME:AddMessage("  Example: |cffffd100" .. c[5] .. "|r") end
+        return
+    end
+    if name ~= "" then ns:Print("no command '%s'.", name) end
+
+    DEFAULT_CHAT_FRAME:AddMessage("|cff82c8ffSolaryn's Expedition|r v" .. tostring(ns.version)
+        .. " — quest routing & exploration")
+    for _, g in ipairs(HELP) do
+        DEFAULT_CHAT_FRAME:AddMessage("|cffc8a85c" .. g.group .. "|r")
+        for _, cmd in ipairs(g.commands) do
+            DEFAULT_CHAT_FRAME:AddMessage(string.format("  |cffffd100%-22s|r %s", usage(cmd), cmd[3]))
+        end
+    end
+    DEFAULT_CHAT_FRAME:AddMessage("Type |cffffd100/sol help <command>|r for details, e.g. /sol help pin.")
 end
 
 function COMMANDS.suggestions()
@@ -185,6 +241,8 @@ function COMMANDS.map()
     end
     ns.MapPins:OpenAt(stop.uiMapID, stop.x, stop.y)
 end
+
+COMMANDS.pin = cmdPin
 
 function COMMANDS.chain(arg)
     local from, to = arg:match("^(%d+)%s+(%d+)$")
@@ -343,13 +401,14 @@ local function dispatch(msg)
 
     local fn = COMMANDS[cmd]
     if not fn then
-        COMMANDS.help()
+        ns:Print("unknown command '%s'. Type /sol help for the list.", cmd)
         return
     end
     fn(rest)
 end
 
 Slash.dispatch = dispatch
+Slash.COMMANDS = COMMANDS
 
 ---------------------------------------------------------------------------
 -- Registration

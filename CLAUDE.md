@@ -18,10 +18,15 @@ lua5.1 test/check_load_order.lua   # loads files in TOC order and checks each fi
 lua5.1 test/load_addon.lua         # loads the addon and shows what got built, without Init's pcall hiding errors
 luac5.1 -p <file>.lua              # syntax check one file
 ./deploy.sh                        # syntax check + tests + load order, then copy *.lua, *.xml and the TOC to the live client
+                                   # (WOW_ADDON_DIR overrides the destination)
 ./deploy.sh --force                # copy without running any checks
 ```
 
 There is no way to run a single test. `harness.lua` is one script with `check(label, cond, detail)` assertions grouped under `== section ==` headers, so run the whole thing and grep the output. After deploying, run `/reload` in game.
+
+## Slash commands
+
+`Slash.HELP` in `Core_Slash.lua` is the single reference for every `/sol` command (summary, details, example); `/sol help [command]` prints it. When you add or rename a command, update `HELP` and the README's command tables, because tests fail if `COMMANDS`, `HELP` and `README.md` disagree.
 
 ## Architecture
 

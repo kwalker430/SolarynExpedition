@@ -320,9 +320,66 @@ for _, cmd in ipairs({ "help", "suggestions", "route", "next", "map", "zones", "
     local ok = pcall(function() ns.Slash.dispatch(cmd) end)
     check("/sol " .. cmd .. " runs", ok)
 end
-check("/sol unknown falls back to help", pcall(ns.Slash.dispatch, "zzzznope"))
+local function chatAfter(fn)
+    local before = #DEFAULT_CHAT_FRAME.messages
+    fn()
+    local out = {}
+    for i = before + 1, #DEFAULT_CHAT_FRAME.messages do out[#out + 1] = DEFAULT_CHAT_FRAME.messages[i] end
+    return table.concat(out, "\n")
+end
+check("an unknown command says so", (function()
+    local text = chatAfter(function() ns.Slash.dispatch("zzzznope") end)
+    return text:find("unknown command 'zzzznope'", 1, true) ~= nil, text
+end)())
 check("/sol empty toggles panel", pcall(ns.Slash.dispatch, ""))
-check("/sol pin lists without arg", pcall(ns.Slash.dispatch, "pin"))
+-- /sol pin was documented but never registered, and this test used to pass
+-- just because the fallback didn't error.
+check("/sol pin with no quest lists your quests", (function()
+    local text = chatAfter(function() ns.Slash.dispatch("pin") end)
+    return text:find("Usage: /sol pin", 1, true) ~= nil, text
+end)())
+check("/sol pin <questID> records your position for that quest", (function()
+    ns.Slash.dispatch("pin 1004")
+    local rec = ns.Overrides:Get(1004)
+    ns.Overrides:Clear(1004)
+    return rec ~= nil
+end)())
+check("every command is in the help, and every help entry is a command", (function()
+    local inHelp = {}
+    for _, g in ipairs(ns.Slash.HELP) do
+        for _, c in ipairs(g.commands) do inHelp[c[1]] = true end
+    end
+    for name in pairs(ns.Slash.COMMANDS) do
+        if not inHelp[name] then return false, "undocumented: " .. name end
+    end
+    for name in pairs(inHelp) do
+        if name ~= "" and not ns.Slash.COMMANDS[name] then return false, "documented but missing: " .. name end
+    end
+    return true
+end)())
+check("every command is in README.md", (function()
+    local f = io.open("README.md")
+    if not f then return false, "no README.md" end
+    local readme = f:read("*a"); f:close()
+    for _, g in ipairs(ns.Slash.HELP) do
+        for _, c in ipairs(g.commands) do
+            local usage = "/sol" .. (c[1] ~= "" and (" " .. c[1]) or "")
+            if not readme:find("`" .. usage, 1, true) then return false, "README lacks " .. usage end
+        end
+    end
+    return true
+end)())
+check("/sol help <command> gives details and an example", (function()
+    local text = chatAfter(function() ns.Slash.dispatch("help pin") end)
+    return text:find("/sol pin <questID>", 1, true) and text:find("Example", 1, true), text
+end)())
+check("/sol help groups every command", (function()
+    local text = chatAfter(function() ns.Slash.dispatch("help") end)
+    for _, g in ipairs(ns.Slash.HELP) do
+        if not text:find(g.group, 1, true) then return false, "missing group " .. g.group end
+    end
+    return true
+end)())
 
 print("\n== empty-state rendering (regression) ==")
 -- In-game this crashed: /sol -> Toggle -> SetTab -> renderNext took the

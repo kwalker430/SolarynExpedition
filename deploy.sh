@@ -9,7 +9,8 @@
 set -euo pipefail
 
 SRC="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-DEST="/home/kwalker/Games/battlenet/drive_c/Program Files (x86)/World of Warcraft/_classic_beta_/Interface/AddOns/SolarynExpedition"
+# Override with WOW_ADDON_DIR=".../Interface/AddOns/SolarynExpedition" ./deploy.sh
+DEST="${WOW_ADDON_DIR:-/home/kwalker/Games/battlenet/drive_c/Program Files (x86)/World of Warcraft/_classic_beta_/Interface/AddOns/SolarynExpedition}"
 FILES=(*.lua *.xml SolarynExpedition.toc)
 
 cd "$SRC"
