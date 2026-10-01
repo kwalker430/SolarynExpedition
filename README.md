@@ -139,15 +139,15 @@ The diagnostics are also saved to your SavedVariables (`WTF/Account/<account>/Sa
 
 ## Development
 
-The add-on is plain Lua 5.1 with no build step. An offline test suite runs it against a mock of the WoW API:
+The add-on is plain Lua 5.1 with no build step. An offline test suite runs it against a mock of the WoW API, so changes can be checked without the game:
 
 ```bash
 lua5.1 test/harness.lua            # full test suite
 lua5.1 test/check_load_order.lua   # TOC load order check
-WOW_ADDON_DIR="/path/to/Interface/AddOns/SolarynExpedition" ./deploy.sh   # test, then copy to your client
+lua5.1 test/load_addon.lua         # load the add-on and show what got built
 ```
 
-`deploy.sh` refuses to copy if the syntax check, tests or load-order check fail. [`CLAUDE.md`](CLAUDE.md) describes the architecture and the client quirks the code works around.
+Run them from the repository root, then copy the add-on files (`*.lua`, `*.xml`, `SolarynExpedition.toc`) into your client's `Interface/AddOns/SolarynExpedition/` folder and `/reload`.
 
 ## License
 

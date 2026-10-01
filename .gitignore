@@ -1,6 +1,15 @@
+# Local workflow (kept on disk, not published)
+deploy.sh
+CLAUDE.md
+.claude/
+
 # Editor / OS clutter
 .vscode/
 .idea/
 *.swp
 *~
 .DS_Store
+
+# Logs and scratch files
+*.log
+*.bak
