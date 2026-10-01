@@ -8,7 +8,7 @@
 ## SavedVariables: SolarynDB
 ## SavedVariablesPerCharacter: SolarynCharDB
 ## X-Category: Quests & Leveling
-## X-Website: https://github.com/kwalker/SolarynExpedition
+## X-Website: https://github.com/kwalker430/SolarynExpedition
 
 # ---------------------------------------------------------------------------
 # Solaryn's Expedition — a questing / world-exploration toolkit.
