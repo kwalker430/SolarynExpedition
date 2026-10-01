@@ -35,6 +35,8 @@ local ZONES = {
     [6]  = { name = "Stranglethorn Vale", worldX = 0,    worldY = 6000, size = 1000, continent = 100 },
     [4]  = { name = "Durotar",            worldX = 0,    worldY = 0,    size = 1000, continent = 101 },
     [84] = { name = "Dungeon Test",       worldX = 0,    worldY = 0,    size = 500, mapType = 4, continent = 100 },
+    -- The continent map itself, covering all of its zones.
+    [100] = { name = "Eastern Kingdoms",  worldX = 0,    worldY = 0,    size = 8000, continent = 100 },
 }
 M.ZONES = ZONES
 
@@ -119,6 +121,11 @@ local function makeWidget(kind)
     function w:SetDrawLayer() return w end
     function w:SetBlendMode() return w end
     function w:SetWordWrap(v) w.wordWrap = v; return w end
+    function w:SetMultiLine(v) w.multiLine = v end
+    function w:SetAutoFocus(v) w.autoFocus = v end
+    function w:HighlightText() w.highlighted = true end
+    function w:SetFocus() w.focused = true end
+    function w:ClearFocus() w.focused = false end
     function w:SetMaxLines() return w end
     function w:SetFontObject() return w end
     function w:GetStringWidth() return #(w.text or "") * 6 end
@@ -804,12 +811,23 @@ function M.installCQuestLog()
         for _, o in ipairs(q.objectives) do if not o.finished then done = false end end
         return (done and M.TURNIN_WP[id]) or q.wp
     end
+    -- Like the client, a marker also appears on the continent map containing
+    -- its zone (projected into continent coordinates). In game this is how one
+    -- objective came back on several maps and became duplicate route stops.
     function C_QuestLog.GetQuestsOnMap(mapID)
         local out = {}
         for id, q in pairs(M.QUESTS) do
             local wp = markerFor(id, q)
-            if wp.mapID == mapID and not M.NO_POI[id] then
-                table.insert(out, { questID = id, x = wp.x, y = wp.y, type = 0, isMapIndicatorQuest = false })
+            if not M.NO_POI[id] then
+                if wp.mapID == mapID then
+                    table.insert(out, { questID = id, x = wp.x, y = wp.y, type = 0, isMapIndicatorQuest = false })
+                elseif ZONES[mapID] and ZONES[wp.mapID] and mapID == ZONES[wp.mapID].continent
+                    and mapID ~= wp.mapID then
+                    local wx, wy = M.mapToWorld(wp.mapID, wp.x, wp.y)
+                    local c = ZONES[mapID]
+                    table.insert(out, { questID = id, x = (wx - c.worldX) / c.size, y = (wy - c.worldY) / c.size,
+                        type = 0, isMapIndicatorQuest = false })
+                end
             end
         end
         return out

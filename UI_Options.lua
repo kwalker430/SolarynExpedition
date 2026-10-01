@@ -123,6 +123,8 @@ local function buildOptions()
 
     ------------------------------------------------------------------
     section("Route")
+    checkbox("Keep the route up to date automatically", "autoRebuild",
+        "Rebuild whenever you accept, finish, hand in or drop a quest. While guiding, finished stops stay done and the rest is re-planned from where you are.")
     checkbox("Build a route automatically when the panel opens", "autoPickRoute",
         "Only rebuilds when your quest log has changed since the last build.")
     checkbox("Finish nearby objectives before handing in", "batchTurnIns",

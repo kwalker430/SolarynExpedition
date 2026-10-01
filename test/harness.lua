@@ -373,6 +373,30 @@ check("/sol help <command> gives details and an example", (function()
     local text = chatAfter(function() ns.Slash.dispatch("help pin") end)
     return text:find("/sol pin <questID>", 1, true) and text:find("Example", 1, true), text
 end)())
+-- In game there was no way to get /sol api and /sol where output out of the
+-- client; they're now saved to SavedVariables and /sol report opens a copy.
+check("/sol api output is saved for later", (function()
+    ns.Slash.dispatch("api")
+    local d = _G.SolarynDB.diagnostics and _G.SolarynDB.diagnostics.api
+    local all = d and table.concat(d.lines, "\n") or ""
+    return d and all:find("capabilities present", 1, true) and not all:find("|c", 1, true)
+        and all:find("GetMapLevels", 1, true) and all:find("continent:", 1, true) and all:find("next zones:", 1, true)
+        and d.version == ns.version, all:sub(1, 120)
+end)())
+check("/sol where output is saved, one line per quest", (function()
+    ns.Slash.dispatch("where")
+    local d = _G.SolarynDB.diagnostics and _G.SolarynDB.diagnostics.where
+    local all = d and table.concat(d.lines, "\n") or ""
+    return all:find("Kobold Camp Cleanup", 1, true) ~= nil and all:find("GetQuestsOnMap", 1, true) ~= nil, all:sub(1, 160)
+end)())
+check("/sol report saves both and opens them ready to copy", (function()
+    ns.Slash.dispatch("report")
+    local r = _G.SolarynDB.diagnostics.report
+    local all = table.concat(r.lines, "\n")
+    local w = ns.Slash.ShowCopyWindow("t", all)       -- returns the same window
+    return all:find("== /sol api ==", 1, true) and all:find("== /sol where ==", 1, true)
+        and w.shown and w.box:GetText() == all and w.box.highlighted and w.box.focused
+end)())
 check("/sol help groups every command", (function()
     local text = chatAfter(function() ns.Slash.dispatch("help") end)
     for _, g in ipairs(ns.Slash.HELP) do
@@ -963,10 +987,16 @@ check("a stop whose quest left the log is skipped", (function()
     local q = Mock.QUESTS[gone]
     Mock.QUESTS[gone] = nil
     ns:Fire("QUEST_REMOVED", gone)
-    local cur = ns.Route:CurrentIndex()
+    -- The route is rebuilt without the dropped quest; the guide carries on.
+    local st = ns.Route:Get()
+    local now = st.stops[st.current or 1]
+    local stillThere = false
+    for _, s2 in ipairs(st.stops) do if s2.questID == gone then stillThere = true end end
     Mock.QUESTS[gone] = q
     ns:Fire("QUEST_LOG_UPDATE")
-    return cur > 1 and ns.Route:Get().stops[cur].questID ~= gone, "at " .. cur
+    ns.Route:StopGuiding()
+    return now and now.questID ~= gone and not stillThere and st.guiding,
+        ("now %s, dropped quest still in route: %s"):format(tostring(now and now.questID), tostring(stillThere))
 end)())
 check("/sol skip moves on one stop", (function()
     freshRoute()
@@ -1697,6 +1727,114 @@ check("Zones tab shows achievement progress", (function()
 end)())
 Mock.ACHIEVEMENTS = {}
 ns.Explored:ResetAchievementIndex()
+
+print("\n== one stop per objective (regression) ==")
+-- In game: a quest's marker came back on its zone map AND the continent map
+-- (and neighbouring zones), and each copy became its own route stop.
+check("a quest marker seen on several maps is one location", (function()
+    goHome()
+    ns.QuestData:Invalidate()
+    local wps = ns.QuestData:Waypoints(1001)
+    return #wps == 1 and wps[1].uiMapID == 1, ("%d waypoints, first on map %s"):format(#wps, tostring(wps[1] and wps[1].uiMapID))
+end)())
+check("the route has one objective stop per quest location", (function()
+    freshRoute()
+    local seen = {}
+    for _, st in ipairs(ns.Route:Get().stops) do
+        local key = st.questID .. ":" .. st.kind
+        if seen[key] then return false, "duplicate " .. key .. " on map " .. st.uiMapID end
+        seen[key] = true
+    end
+    return true
+end)())
+
+print("\n== keeping the route up to date ==")
+local function routeQuests()
+    local set = {}
+    for _, st in ipairs(ns.Route:Get().stops or {}) do set[st.questID] = true end
+    return set
+end
+check("accepting a quest rebuilds the route with it", (function()
+    freshRoute(); ns.Route:ResetSync(); ns:Fire("QUEST_LOG_UPDATE")
+    Mock.QUESTS[1006] = { title = "Gold Dust Exchange", level = 7,
+        objectives = { { text = "Gold Dust: 0/10", finished = false, numFulfilled = 0, numRequired = 10 } },
+        wp = { mapID = 1, x = 0.4, y = 0.45 } }
+    ns:Fire("QUEST_ACCEPTED", 1006)
+    local has = routeQuests()[1006]
+    Mock.QUESTS[1006] = nil
+    ns:Fire("QUEST_REMOVED", 1006)
+    return has == true and not routeQuests()[1006]
+end)())
+check("objective progress alone doesn't rebuild", (function()
+    freshRoute(); ns.Route:ResetSync(); ns:Fire("QUEST_LOG_UPDATE")
+    local built = ns.Route:Get().built
+    local realBuild, calls = ns.Route.Build, 0
+    ns.Route.Build = function(self, ...) calls = calls + 1; return realBuild(self, ...) end
+    local o = Mock.QUESTS[1001].objectives[1]
+    local old = o.numFulfilled
+    o.numFulfilled = 5
+    ns:Fire("QUEST_LOG_UPDATE")
+    o.numFulfilled = old
+    ns.Route.Build = realBuild
+    return calls == 0, tostring(calls) .. " rebuilds"
+end)())
+check("finishing a quest while not guiding still updates the route", (function()
+    freshRoute(); ns.Route:ResetSync(); ns:Fire("QUEST_LOG_UPDATE")
+    ns.Route:StopGuiding()
+    local saved = finish(1005, true)
+    ns:Fire("QUEST_LOG_UPDATE")
+    local handIn = stopIndex(1005, "turnin")
+    local objective = stopIndex(1005, "objective")
+    restore(1005, saved)
+    ns:Fire("QUEST_LOG_UPDATE")
+    return handIn ~= nil and objective == nil
+end)())
+check("a new quest joins a running guide without losing progress", (function()
+    local stops = freshRoute(); ns.Route:ResetSync(); ns:Fire("QUEST_LOG_UPDATE")
+    ns.Settings().advanceWhenDone = false
+    stops = ns.Route:Get().stops
+    ns.Route:Guide()
+    local first = stops[1]
+    standAt(first)
+    ns.Route:CheckProgress(false)                          -- reach stop 1
+    local reachedKey = ns.Route.StopKey(first)
+    Mock.QUESTS[1006] = { title = "Gold Dust Exchange", level = 7,
+        objectives = { { text = "Gold Dust: 0/10", finished = false, numFulfilled = 0, numRequired = 10 } },
+        wp = { mapID = 1, x = 0.4, y = 0.45 } }
+    ns:Fire("QUEST_ACCEPTED", 1006)
+    local st = ns.Route:Get()
+    local ok = st.guiding and st.current == 2 and ns.Route.StopKey(st.stops[1]) == reachedKey
+        and routeQuests()[1006] == true
+    Mock.QUESTS[1006] = nil
+    ns:Fire("QUEST_REMOVED", 1006)
+    ns.Route:StopGuiding(); goHome()
+    return ok, ("guiding %s, current %s"):format(tostring(st.guiding), tostring(st.current))
+end)())
+check("auto-update off leaves the route alone", (function()
+    freshRoute(); ns.Route:ResetSync(); ns:Fire("QUEST_LOG_UPDATE")
+    ns.Settings().autoRebuild = false
+    Mock.QUESTS[1006] = { title = "Gold Dust Exchange", level = 7,
+        objectives = { { text = "Gold Dust: 0/10", finished = false } }, wp = { mapID = 1, x = 0.4, y = 0.45 } }
+    ns:Fire("QUEST_ACCEPTED", 1006)
+    local has = routeQuests()[1006]
+    Mock.QUESTS[1006] = nil
+    ns.Settings().autoRebuild = true
+    ns:Fire("QUEST_REMOVED", 1006)
+    return not has
+end)())
+check("the tracker's rebuild button rebuilds the route", (function()
+    freshRoute()
+    ns.Route:Guide()
+    ns.HUD:Refresh()
+    local b = ns.HUD:GetRebuildButton()
+    local realBuild, calls = ns.Route.Build, 0
+    ns.Route.Build = function(self, ...) calls = calls + 1; return realBuild(self, ...) end
+    b:Click("LeftButton")
+    ns.Route.Build = realBuild
+    local ok = b.shown ~= false and calls == 1 and ns.Route:IsGuiding()
+    ns.Route:StopGuiding()
+    return ok
+end)())
 
 print("\n== client event registration ==")
 -- Regression: ns:RegisterEvent once only filled a Lua table, so in game the

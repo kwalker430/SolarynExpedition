@@ -601,13 +601,54 @@ end
 
 ns:RegisterEvent("QUEST_LOG_UPDATE", onQuestLogChanged, Route)
 
--- Quest progress can finish the current stop without moving.
-local function onQuestProgress()
-    ns:Debounce("guide", 0.3, function() Route:CheckProgress(true) end)
+-- Keeping the route current. Every quest event funnels into one debounced
+-- Sync: if the set of quests in the log, or which of them are complete, has
+-- changed since the last sync (a quest accepted, finished, handed in or
+-- abandoned), the route is rebuilt from where the player stands. Objective
+-- progress alone ("4/8") doesn't rebuild. While guiding, Build keeps the
+-- stops already reached, so the guide carries on from the re-optimised route;
+-- then the current stop is checked for completion as before.
+local lastSyncPrint
+
+--- "questID:complete" for every quest in the log, sorted.
+local function logFingerprint()
+    local parts = {}
+    for _, e in ipairs(ns.QuestData:Scan()) do
+        if not e.isHeader then
+            parts[#parts + 1] = e.questID .. (ns.QuestData:IsComplete(e.questID) and ":c" or ":o")
+        end
+    end
+    table.sort(parts)
+    return table.concat(parts, ","), #parts
 end
-ns:RegisterEvent("QUEST_LOG_UPDATE", onQuestProgress, Route)
-ns:RegisterEvent("QUEST_TURNED_IN", onQuestProgress, Route)
-ns:RegisterEvent("QUEST_REMOVED", onQuestProgress, Route)
+
+function Route:Sync()
+    local print, count = logFingerprint()
+    local changed = print ~= lastSyncPrint
+    lastSyncPrint = print
+
+    if changed and ns.Settings().autoRebuild and count > 0 then
+        local before = self:Next()
+        local beforeKey = before and Route.StopKey(before)
+        self:Build()
+        self:StampFingerprint()
+        local after = self:Next()
+        if self:IsGuiding() and after and Route.StopKey(after) ~= beforeKey and not self:IsStopDone(after) then
+            ns:Print("route updated — next: %s (%s)", ns:Truncate(after.title or "?", 30), ns:MapName(after.uiMapID))
+        end
+    end
+    self:CheckProgress(true)
+end
+
+--- Forget the last synced quest log (tests; also forces the next Sync to rebuild).
+function Route:ResetSync() lastSyncPrint = nil end
+
+local function onQuestEvent()
+    ns:Debounce("route-sync", 0.4, function() Route:Sync() end)
+end
+for _, event in ipairs({ "QUEST_LOG_UPDATE", "QUEST_ACCEPTED", "QUEST_TURNED_IN", "QUEST_REMOVED" }) do
+    ns:RegisterEvent(event, onQuestEvent, Route)
+end
 
 -- Arrival: a light position check twice a second, only while guiding.
 local GUIDE_INTERVAL = 0.5
@@ -622,5 +663,4 @@ guideTicker:SetScript("OnUpdate", function(_, elapsed)
     if not ok then ns:Debug("guide tick failed: %s", tostring(err)) end
 end)
 Route.guideTicker = guideTicker
-ns:RegisterEvent("QUEST_ACCEPTED", function() ns.Route:StampFingerprint() end, Route)
 return Route

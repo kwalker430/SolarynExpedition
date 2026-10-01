@@ -24,6 +24,54 @@ local function printList(lines, header)
 end
 
 ---------------------------------------------------------------------------
+-- Diagnostics capture
+---------------------------------------------------------------------------
+-- /sol api and /sol where print through out()/outf(), which also keep a copy
+-- while a capture is running. The copy is saved to SolarynDB.diagnostics
+-- (written to disk on /reload or logout) so it can be read without copying
+-- chat by hand. We never hook the chat frame itself: changing Blizzard
+-- frames from addon code taints them.
+local captured
+
+local function plain(text)
+    text = tostring(text or "")
+    text = text:gsub("|c%x%x%x%x%x%x%x%x", ""):gsub("|r", ""):gsub("|T.-|t", "")
+    return text
+end
+
+local function out(msg)
+    DEFAULT_CHAT_FRAME:AddMessage(msg)
+    if captured then captured[#captured + 1] = plain(msg) end
+end
+
+local function outf(fmt, ...)
+    local msg = select("#", ...) > 0 and fmt:format(...) or fmt
+    ns:Print("%s", msg)
+    if captured then captured[#captured + 1] = plain(msg) end
+end
+
+--- Run fn while capturing its output; save it under diagnostics[kind].
+local function captureTo(kind, fn)
+    captured = {}
+    local ok, err = pcall(fn)
+    if not ok then captured[#captured + 1] = "error: " .. tostring(err) end
+    local lines = captured
+    captured = nil
+    local d = _G.SolarynDB
+    if d then
+        d.diagnostics = d.diagnostics or {}
+        d.diagnostics[kind] = {
+            when = date("%Y-%m-%d %H:%M:%S"),
+            character = ns.charKey,
+            version = ns.version,
+            lines = lines,
+        }
+    end
+    return lines
+end
+Slash.CaptureTo = captureTo
+
+---------------------------------------------------------------------------
 -- Command reference
 ---------------------------------------------------------------------------
 -- { name, args, summary, details, example }. name "" is bare /sol.
@@ -68,6 +116,8 @@ local HELP = {
     } },
     { group = "Help & troubleshooting", commands = {
         { "help", "[command]", "This list, or details for one command", nil, "/sol help pin" },
+        { "report", "", "Collect diagnostics to share",
+          "Runs /sol api and /sol where together, saves the result (written to disk on /reload) and opens it in a window ready to copy into a bug report." },
         { "api", "", "Report what this client supports",
           "Lists the game APIs the addon found (quest markers, fog of war, zone levels...). Include this when reporting a problem." },
         { "debug", "", "Toggle debug messages",
@@ -298,59 +348,87 @@ end
 --- Report the live API shapes this build actually returns.
 -- Every mock-vs-client mismatch so far has come from a return shape or a
 -- template-provided region, so dump both rather than guessing.
-function COMMANDS.api()
-    ns:Print("--- API shape report ---")
-    ns:Print("addon v%s, client interface %s", tostring(ns.version), tostring(ns.tocVersion))
+local function run_api()
+    outf("--- API shape report ---")
+    outf("addon v%s, client interface %s", tostring(ns.version), tostring(ns.tocVersion))
 
     local caps = {}
     for k, v in pairs(ns.Has) do
         if v then table.insert(caps, k) end
     end
     table.sort(caps)
-    ns:Print("capabilities present (%d): %s", #caps, table.concat(caps, ", "))
+    outf("capabilities present (%d): %s", #caps, table.concat(caps, ", "))
 
     local mapID = ns:PlayerMapID()
-    ns:Print("player map: %s", tostring(mapID))
+    outf("player map: %s", tostring(mapID))
     if mapID then
         local pos = ns.Try("C_Map", "GetPlayerMapPosition", mapID, "player")
-        ns:Print("  GetPlayerMapPosition -> %s (%s)",
+        outf("  GetPlayerMapPosition -> %s (%s)",
             type(pos), pos and type(pos.GetXY) or "no GetXY")
         local cid, wp = ns.Try("C_Map", "GetWorldPosFromMapPos", mapID, pos or { x = 50, y = 50 })
-        ns:Print("  GetWorldPosFromMapPos -> continentID=%s, pos=%s",
+        outf("  GetWorldPosFromMapPos -> continentID=%s, pos=%s",
             tostring(cid), type(wp))
     end
 
     local cosmic = ns.Try("C_Map", "GetMapChildrenInfo", 946)
-    ns:Print("  map tree from 946 (Cosmic) -> %s", type(cosmic) == "table" and (#cosmic .. " children") or "none")
+    outf("  map tree from 946 (Cosmic) -> %s", type(cosmic) == "table" and (#cosmic .. " children") or "none")
     local azeroth = ns.Try("C_Map", "GetMapChildrenInfo", 947)
-    ns:Print("  map tree from 947 (Azeroth) -> %s", type(azeroth) == "table" and (#azeroth .. " children") or "none")
-    ns:Print("  zones known: %d  (current map type %s)", #ns.ZoneData:WorldZones(),
+    outf("  map tree from 947 (Azeroth) -> %s", type(azeroth) == "table" and (#azeroth .. " children") or "none")
+    outf("  zones known: %d  (current map type %s)", #ns.ZoneData:WorldZones(),
         tostring(mapID and ns.ZoneData:Get(mapID) and ns.ZoneData:Get(mapID).mapType))
-    ns:Print("  exploration: tracking %s, %d zones recorded, fog-of-war import %s",
+    -- Zone levels and progression, as the panel sees them.
+    local zone = mapID and ns.ZoneData:WorldAncestor(mapID)
+    if zone then
+        local raw = { ns.Try("C_Map", "GetMapLevels", zone) }
+        local r = ns.ZoneData:LevelRange(zone)
+        outf("  zone %s (%d): GetMapLevels -> %s  |  used: %s", ns.ZoneData:Name(zone), zone,
+            #raw > 0 and table.concat((function() local t = {} for i, v in ipairs(raw) do t[i] = tostring(v) end return t end)(), ", ") or "nothing",
+            r and string.format("%d-%d from %s", r.min, r.max, r.source) or "no range")
+        local cont = ns.ZoneData:Continent(zone)
+        outf("  continent: %s", cont and string.format("%s (%d)", ns.ZoneData:Name(cont), cont) or "none found")
+        local prog = ns.ZoneData:Progression(3)
+        if prog.current and prog.current.status then outf("  this zone for you: %s", prog.current.status) end
+        if #prog.next == 0 then
+            outf("  next zones: none recommended")
+        else
+            local names = {}
+            for i, z in ipairs(prog.next) do
+                names[i] = string.format("%s %d-%d%s", z.name, z.range.min, z.range.max,
+                    z.distance and (" " .. ns:FormatDistance(z.distance)) or "")
+            end
+            outf("  next zones: %s", table.concat(names, "; "))
+        end
+    end
+    outf("  exploration: tracking %s, %d zones recorded, fog-of-war import %s",
         ns.Settings().trackingEnabled and "on" or "off", ns.Explored:Summary().zones,
         ns.Has.exploredAreasAtPos and "available" or "NOT available")
 
     local n = ns.Try("C_QuestLog", "GetNumQuestLogEntries")
-    ns:Print("quest log entries: %s", tostring(n))
-    ns:Print("panel built: %s", tostring(ns.Panel:CurrentTab() ~= nil))
-    ns:Print("zones loaded: %s", tostring(ns.ZoneData:Name(mapID or -1)))
+    outf("quest log entries: %s", tostring(n))
+    outf("panel built: %s", tostring(ns.Panel:CurrentTab() ~= nil))
+    outf("zones loaded: %s", tostring(ns.ZoneData:Name(mapID or -1)))
+end
+
+function COMMANDS.api()
+    captureTo("api", run_api)
+    ns:Print("(saved too: /reload writes it to disk, or /sol report opens a copyable window)")
 end
 
 --- For each quest in the log, show what every location source returns, so
 -- we can see which sources this client actually supports.
-function COMMANDS.where()
+local function run_where()
     local yes = function(cap) return ns.Has[cap] and "|cff40ff40yes|r" or "|cffff4040no|r" end
-    ns:Print("--- quest location sources ---")
-    ns:Print("GetQuestsOnMap %s  GetNextWaypoint %s  GetNextWaypointForMap %s",
+    outf("--- quest location sources ---")
+    outf("GetQuestsOnMap %s  GetNextWaypoint %s  GetNextWaypointForMap %s",
         yes("questsOnMap"), yes("nextWaypointAny"), yes("nextWaypoint"))
-    ns:Print("GetQuestUiMapID %s  C_TaskQuest %s  C_QuestLog.IsComplete %s  UiMapPoint %s",
+    outf("GetQuestUiMapID %s  C_TaskQuest %s  C_QuestLog.IsComplete %s  UiMapPoint %s",
         yes("questUiMapID"), yes("taskQuestLocation"), yes("questIsComplete"), yes("uiMapPoint"))
 
     local playerMap = ns:PlayerMapID()
-    ns:Print("you are on map %s (%s)", tostring(playerMap), ns:MapName(playerMap or -1))
+    outf("you are on map %s (%s)", tostring(playerMap), ns:MapName(playerMap or -1))
     if ns.Has.questsOnMap and playerMap then
         local list = ns.Try("C_QuestLog", "GetQuestsOnMap", playerMap)
-        ns:Print("GetQuestsOnMap(%s) -> %s markers", tostring(playerMap),
+        outf("GetQuestsOnMap(%s) -> %s markers", tostring(playerMap),
             type(list) == "table" and tostring(#list) or type(list))
     end
 
@@ -380,11 +458,81 @@ function COMMANDS.where()
                 table.insert(parts, "forMap=" .. fmt(ns.Try("C_QuestLog", "GetNextWaypointForMap", e.questID, playerMap)))
             end
             table.insert(parts, ns.QuestData:IsComplete(e.questID) and "done" or "open")
-            DEFAULT_CHAT_FRAME:AddMessage(string.format("  %d %s: %s",
+            out(string.format("  %d %s: %s",
                 e.questID, ns:Truncate(e.title or "?", 24), table.concat(parts, "  ")))
         end
     end
-    if n == 0 then ns:Print("quest log is empty (or not loaded yet).") end
+    if n == 0 then outf("quest log is empty (or not loaded yet).") end
+end
+
+function COMMANDS.where()
+    captureTo("where", run_where)
+    ns:Print("(saved too: /reload writes it to disk, or /sol report opens a copyable window)")
+end
+
+--- A window holding text selected and ready to copy (Ctrl+C).
+local reportWindow
+local function showCopyWindow(title, text)
+    local W = ns.Widgets
+    if not reportWindow then
+        reportWindow = W:Window("SolarynExpeditionReport", {
+            title = title, width = 560, height = 420, default = { "CENTER", 0, 0 },
+        })
+        local hint = W:Line(reportWindow, "Press Ctrl+C to copy (the text is already selected), then paste it into a GitHub issue.",
+            "GameFontHighlightSmall")
+        hint:SetPoint("TOPLEFT", 12, -(W.TITLE_HEIGHT + 6))
+        hint:SetPoint("TOPRIGHT", -12, -(W.TITLE_HEIGHT + 6))
+        local scroll = CreateFrame("ScrollFrame", nil, reportWindow, "UIPanelScrollFrameTemplate")
+        scroll:SetPoint("TOPLEFT", 12, -(W.TITLE_HEIGHT + 24))
+        scroll:SetPoint("BOTTOMRIGHT", -32, 12)
+        local box = CreateFrame("EditBox", nil, scroll)
+        box:SetMultiLine(true)
+        box:SetAutoFocus(false)
+        box:SetFontObject(_G.ChatFontNormal or "ChatFontNormal")
+        box:SetWidth(500)
+        box:SetScript("OnEscapePressed", function() reportWindow:Hide() end)
+        -- Keep it read-only in spirit: typing restores the report.
+        box:SetScript("OnTextChanged", function(self, userInput)
+            if userInput and reportWindow.text then self:SetText(reportWindow.text); self:HighlightText() end
+        end)
+        scroll:SetScrollChild(box)
+        reportWindow.box = box
+    end
+    reportWindow.title:SetText(title)
+    reportWindow.text = text
+    reportWindow.box:SetText(text)
+    reportWindow:Show()
+    reportWindow.box:SetFocus()
+    reportWindow.box:HighlightText()
+    return reportWindow
+end
+Slash.ShowCopyWindow = showCopyWindow
+
+--- Everything a bug report needs, in one copyable block.
+function COMMANDS.report()
+    local header = {
+        "Solaryn's Expedition diagnostics",
+        string.format("version %s  ·  %s  ·  %s", tostring(ns.version), tostring(ns.charKey), date("%Y-%m-%d %H:%M")),
+        string.format("client %s (interface %s), level %s, map %s (%s)",
+            tostring((GetBuildInfo())), tostring(ns.tocVersion), tostring(ns.UnitLevelSafe()),
+            tostring(ns:PlayerMapID()), ns:MapName(ns:PlayerMapID() or -1)),
+        "",
+    }
+    local lines = {}
+    for _, l in ipairs(header) do lines[#lines + 1] = l end
+    lines[#lines + 1] = "== /sol api =="
+    for _, l in ipairs(captureTo("api", run_api)) do lines[#lines + 1] = l end
+    lines[#lines + 1] = ""
+    lines[#lines + 1] = "== /sol where =="
+    for _, l in ipairs(captureTo("where", run_where)) do lines[#lines + 1] = l end
+    local d = _G.SolarynDB
+    if d then
+        d.diagnostics = d.diagnostics or {}
+        d.diagnostics.report = { when = date("%Y-%m-%d %H:%M:%S"), character = ns.charKey, version = ns.version, lines = lines }
+    end
+    showCopyWindow("Solaryn's Expedition — diagnostics", table.concat(lines, "\n"))
+    ns:Print("diagnostics saved (written to disk on /reload) and opened for copying.")
+    return lines
 end
 
 ---------------------------------------------------------------------------

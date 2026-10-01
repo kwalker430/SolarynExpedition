@@ -41,6 +41,7 @@ ns.Defaults = {
         -- Route
         maxRouteQuests = 12,
         autoPickRoute = true,       -- auto-fill route when panel opens
+        autoRebuild = true,         -- rebuild when a quest is accepted, finished, handed in or dropped
         includeTurnIns = true,      -- insert turn-in stops before objectives
         mapPins = true,             -- draw route pins on the world map
         clearWaypointOnArrive = true, -- clear our waypoint when the route is finished

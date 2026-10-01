@@ -23,6 +23,7 @@ Three tabs:
 The top of the panel always shows your current zone, its level range and how much of it you've explored.
 
 ### Route guide
+- **Always up to date:** the route rebuilds itself whenever you accept, finish, hand in or drop a quest. While you're being guided, finished stops stay done and new quests slot in where they fit best.
 - **Areas first:** objectives near you come before walking back to hand in. A hand-in right on your way is picked up immediately.
 - **Moves on when the work is done:** a stop counts as done when the quest's objectives are complete, not just because you arrived. When you finish a quest, its hand-in is added to the route and the rest is re-planned from where you stand.
 - **Numbered map pins:** route stops show on the world map. Hover a pin for details or click it to set a waypoint.
@@ -32,6 +33,7 @@ A compact tracker, in the style of the built-in quest tracker, appears while you
 - The current stop, its remaining objectives and a live distance.
 - A **direction arrow** relative to the way you're facing.
 - The next few stops; click one to jump ahead.
+- Header buttons: **rebuild** the route now, **skip** a stop, **stop** guiding, and collapse.
 - **Quest item buttons** for usable quest items in your bags. Bind **"Use quest item (guided quest)"** under *Key Bindings → AddOns*.
 
 ### Quest info in tooltips
@@ -96,6 +98,7 @@ A compact tracker, in the style of the built-in quest tracker, appears while you
 | Command | What it does |
 |---|---|
 | `/sol help [command]` | The command list, or details and an example for one command |
+| `/sol report` | Collect diagnostics (`/sol api` + `/sol where`) in a window ready to copy into a bug report |
 | `/sol api` | Report which game features this client supports. Include it with bug reports |
 | `/sol debug` | Toggle debug messages |
 
@@ -105,7 +108,7 @@ A compact tracker, in the style of the built-in quest tracker, appears while you
 
 Open with `/sol options`, the cog on the panel, or right-click the minimap button.
 - **Display:** minimap button, panel lock, route pins on the map.
-- **Route:** auto-build on open, finish nearby objectives before handing in, wait until the quest work is done (or move on when you arrive), arrival distance, quests per route.
+- **Route:** keep the route up to date automatically, auto-build on open, finish nearby objectives before handing in, wait until the quest work is done (or move on when you arrive), arrival distance, quests per route.
 - **Route tracker:** show while guiding (or always), lock, size, number of upcoming stops, quest item buttons, tooltip quest info.
 - **Exploration tracking:** sampling interval and grid detail.
 - **Suggestions:** rank by distance, or by your own weights (distance, level, same zone, hand-ins, story and task quests).
@@ -128,7 +131,9 @@ Solaryn's Expedition **does not ship a quest database**. It uses what the game c
 Please open an issue with:
 1. What you were doing and what you expected.
 2. The full error text, if there was one.
-3. The output of **`/sol api`**, and of **`/sol where`** for location problems.
+3. Your diagnostics: type **`/sol report`**, press **Ctrl+C** in the window that opens (the text is already selected) and paste it into the issue.
+
+The diagnostics are also saved to your SavedVariables (`WTF/Account/<account>/SavedVariables/SolarynExpedition.lua`, under `diagnostics`) when you `/reload` or log out.
 
 ---
 

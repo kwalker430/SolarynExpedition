@@ -309,6 +309,9 @@ end
 
 local SOURCE_RANK = { override = 0, poi = 1, waypoint = 2, task = 3, mapWaypoint = 4 }
 
+-- Two markers this close (yards) are the same place seen on different maps.
+local SAME_PLACE_YARDS = 150
+
 --- All map positions the client knows for a quest's current step.
 -- Returns a list of { uiMapID, x, y, world, questID, source }, best first.
 function QuestData:Waypoints(questID)
@@ -380,6 +383,33 @@ function QuestData:Waypoints(questID)
     for _, wp in ipairs(out) do
         wp.world = ns:WorldPos(wp.uiMapID, wp.x, wp.y)
     end
+
+    -- One place, one location. The client returns the same marker on every
+    -- map that overlaps it (the zone, its continent, the edge of a
+    -- neighbouring zone); each copy used to become its own route stop. Keep
+    -- the best-ranked copy (most specific map, sorted above) and drop any
+    -- other within SAME_PLACE_YARDS of one already kept.
+    local kept = {}
+    for _, wp in ipairs(out) do
+        local duplicate = false
+        for _, k in ipairs(kept) do
+            if wp.world and k.world then
+                local sameContinent = not (wp.world.continentID and k.world.continentID)
+                    or wp.world.continentID == k.world.continentID
+                if sameContinent and (ns:WorldDist(wp.world, k.world) or math.huge) <= SAME_PLACE_YARDS then
+                    duplicate = true
+                    break
+                end
+            elseif specificity(wp.uiMapID, playerMap) >= 3 then
+                -- No world position to compare: a continent-level copy of a
+                -- marker we already have on a zone map adds nothing.
+                duplicate = true
+                break
+            end
+        end
+        if not duplicate then table.insert(kept, wp) end
+    end
+    out = kept
 
     self.lastSources[questID] = out[1] and out[1].source or nil
     if e then

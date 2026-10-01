@@ -42,7 +42,7 @@ local itemButtons = {}
 local itemsPending = false     -- an update waiting for combat to end
 
 local frame, header, body
-local titleText, countText, skipButton, stopButton, collapseButton
+local titleText, countText, skipButton, stopButton, collapseButton, rebuildButton
 local arrow, stopTitle, stopWhere, objectiveLines = nil, nil, nil, {}
 local upcomingRows = {}
 local currentBlock, startButton
@@ -179,6 +179,18 @@ local function build()
     stopButton:SetPoint("RIGHT", collapseButton, "LEFT", -2, 0)
     skipButton = smallButton(header, ">>", "Skip this stop", function() ns.Route:Advance("skipped") end)
     skipButton:SetPoint("RIGHT", stopButton, "LEFT", -2, 0)
+
+    -- Rebuild on demand (the route also rebuilds itself on quest changes).
+    rebuildButton = smallButton(header, "", "Rebuild route", function() HUD:RebuildRoute() end)
+    rebuildButton.text:SetText("")
+    local refresh = rebuildButton:CreateTexture(nil, "ARTWORK")
+    refresh:SetSize(14, 14)
+    refresh:SetPoint("CENTER")
+    refresh:SetTexture("Interface\\Buttons\\UI-RefreshButton")
+    rebuildButton.icon = refresh
+    Widgets:TooltipLines(rebuildButton, "Rebuild route",
+        { "Re-plan the remaining stops from where you are.", "Stops you've finished stay done." })
+    rebuildButton:SetPoint("RIGHT", skipButton, "LEFT", -2, 0)
 
     titleText = Widgets:Line(header, "ROUTE", "GameFontNormalSmall")
     titleText:SetPoint("LEFT", 6, 0)
@@ -544,6 +556,21 @@ function HUD:Refresh()
     self:UpdateLive()
     self:UpdateItems()
 end
+
+--- Rebuild now (the tracker's refresh button).
+function HUD:RebuildRoute()
+    local state = ns.Route:Build()
+    ns.Route:StampFingerprint()
+    local n = #(state.stops or {})
+    if n == 0 then
+        ns:Print("no route — no quests in your log with a known location.")
+    else
+        local nxt = ns.Route:Next()
+        ns:Print("route rebuilt: %d stops%s", n, nxt and ("  ·  next: " .. ns:Truncate(nxt.title or "?", 30)) or "")
+    end
+end
+
+function HUD:GetRebuildButton() return rebuildButton end
 
 function HUD:GetFrame() return frame end
 
