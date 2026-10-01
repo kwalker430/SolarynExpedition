@@ -1,0 +1,6 @@
+# Editor / OS clutter
+.vscode/
+.idea/
+*.swp
+*~
+.DS_Store

@@ -1,0 +1,53 @@
+## Interface: 16001
+## Title: Solaryn's Expedition
+## Notes: Quest routing, next-step guidance, and zone tracking for WoW: Forever.
+## Notes-zhCN: 任务路线、下一步建议与区域探索追踪。
+## Author: kwalker
+## Version: 1.2.0
+## IconTexture: Interface\Icons\INV_Misc_Map_01
+## SavedVariables: SolarynDB
+## SavedVariablesPerCharacter: SolarynCharDB
+## X-Category: Quests & Leveling
+## X-Website: https://github.com/kwalker/SolarynExpedition
+
+# ---------------------------------------------------------------------------
+# Solaryn's Expedition — a questing / world-exploration toolkit.
+#
+# Slash commands:  /sol  (also /expedition)
+#
+# Target: WoW: Forever, currently in beta (_classic_beta_, interface 16001,
+# build 70124). Verified against addons that load on that client, which use
+# C_QuestLog.{GetInfo,GetQuestObjectives,GetNextWaypointForMap,IsQuestFlaggedCompleted}
+# and C_Map.{GetMapChildrenInfo,GetBestMapForUnit,GetPlayerMapPosition,
+#             GetWorldPosFromMapPos,SetUserWaypoint,CanSetUserWaypointOnMap}.
+#
+# Deliberately NOT used, because these do not exist in this API:
+#   C_Map.GetAllMapInfo             -> zones come from walking GetMapChildrenInfo
+#                                     from the Cosmic root (946) instead
+#   C_QuestLog.GetActiveQuestMapIDs -> candidate maps are derived from the
+#                                     player's map + its parent chain
+#
+# Load order matters: Init creates the shared namespace and event dispatcher,
+# Constants must land before Util (Util reads ns.Defaults), and Explored must
+# load before Suggest (Suggest reads ns.Explored).
+# ---------------------------------------------------------------------------
+
+Init.lua
+Core_Constants.lua
+Core_Util.lua
+Core_Overrides.lua
+Core_ZoneData.lua
+Core_Explored.lua
+Core_QuestData.lua
+Core_QuestGivers.lua
+Core_Route.lua
+Core_Suggest.lua
+Core_MapPins.lua
+SolarynExpedition.xml
+Core_Slash.lua
+UI_Widgets.lua
+UI_Panel.lua
+UI_Minimap.lua
+UI_HUD.lua
+UI_Tooltip.lua
+UI_Options.lua

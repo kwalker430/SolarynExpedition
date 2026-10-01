@@ -1,0 +1,14 @@
+<Ui xmlns="http://www.blizzard.com/wow/ui/" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    xsi:schemaLocation="http://www.blizzard.com/wow/ui/ ..\FrameXML\UI.xsd">
+    <!--
+        Route pin template for the world map. The map canvas creates pins by
+        template name (AcquirePin), so this must be a real frame template.
+        All behaviour lives in Core_MapPins.lua; OnLoad mixes it in.
+    -->
+    <Frame name="SolarynExpeditionRoutePinTemplate" virtual="true">
+        <Size x="20" y="20"/>
+        <Scripts>
+            <OnLoad function="SolarynExpeditionRoutePin_OnLoad"/>
+        </Scripts>
+    </Frame>
+</Ui>

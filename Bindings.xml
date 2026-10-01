@@ -1,0 +1,5 @@
+<Bindings>
+    <!-- Clicks the first quest item button beside the route tracker.
+         Names are set in UI_HUD.lua (BINDING_HEADER_/BINDING_NAME_ globals). -->
+    <Binding name="CLICK SolarynExpeditionQuestItemButton1:LeftButton" header="SOLARYNEXPEDITION" category="ADDONS"/>
+</Bindings>
