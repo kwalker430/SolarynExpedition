@@ -12,6 +12,24 @@ Solaryn's Expedition helps you quest an area well without turning the game into 
 
 ---
 
+## About
+
+**Solaryn** is my main, an Alliance Druid on the Gurubashi realm in retail, and the character I always come back to. The add-on carries his name because it's built the way he plays: wandering, questing, and seeing every corner of the map.
+
+I've played World of Warcraft since 2005 and have never stopped loving it. Druid is my home, but I'm a proud altoholic with more characters than I'd like to admit, which means a *lot* of time spent asking the same two questions:
+
+- *"Where do I turn this quest in?"*
+- *"What zone should I be in right now?"*
+
+Solaryn's Expedition is my answer, and it sits between the tools that are already out there. Questie shows you everything on the map; RestedXP hands you a step-by-step script. This add-on aims for the middle ground, and you choose how much of it to use:
+
+- **As a route guide:** the on-screen tracker walks you through your quests in a sensible order, area by area, and keeps the route up to date as you pick quests up and finish them.
+- **As a companion for exploring:** leave the guide off and use it to see where your quests and their hand-ins are, which zone suits your level, what an NPC has to offer, and how much of each zone you've discovered.
+
+Either way, the aim is the same: less time lost, more time enjoying Azeroth.
+
+---
+
 ## Features
 
 ### The panel (`/sol` or the minimap button)
