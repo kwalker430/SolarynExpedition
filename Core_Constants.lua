@@ -48,6 +48,8 @@ ns.Defaults = {
         autoAdvance = true,         -- guide: move the waypoint on to the next stop
         advanceWhenDone = true,     -- guide: move on when the quest work is done, not on arrival
         batchTurnIns = true,        -- route: finish nearby objectives before walking back to hand in
+        routeLevelWeight = 0.15,    -- route: extra distance per level a quest is away from yours (0 = ignore level)
+        includeDungeons = false,    -- route: include dungeon and raid quests
         arriveRadius = 30,          -- guide: yards from a stop that count as "there"
 
         -- Route tracker (on-screen HUD)
@@ -107,6 +109,27 @@ end
 function ns.UnitLevelSafe()
     local lvl = UnitLevel("player")
     return type(lvl) == "number" and lvl or nil
+end
+
+-- A quest this many levels above you gets a caution mark.
+ns.CAUTION_LEVELS = 3
+
+--- Levels a quest is above the player when that's enough to warrant caution
+-- (ns.CAUTION_LEVELS or more), else nil.
+function ns.LevelCaution(level)
+    local p = ns.UnitLevelSafe()
+    if type(level) ~= "number" or not p then return nil end
+    local over = level - p
+    return over >= ns.CAUTION_LEVELS and over or nil
+end
+
+--- Short warning text for a quest well above the player's level, or nil.
+function ns.CautionText(level)
+    local over = ns.LevelCaution(level)
+    if not over then return nil end
+    local c = over >= 5 and ns.Colors.bad or ns.Colors.warn
+    return string.format("|cff%02x%02x%02x(!) Lv %d, %d above you|r",
+        c.r * 255, c.g * 255, c.b * 255, level, over)
 end
 
 -- Yards -> readable distance. 1 mile = 1760 yards.

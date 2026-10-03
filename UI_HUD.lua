@@ -511,6 +511,8 @@ function HUD:Refresh()
             stopTitle:SetText(stop.title or ("Quest " .. tostring(stop.questID)))
             stopTitle:SetTextColor(c.r, c.g, c.b)
             local texts = objectiveTexts(stop)
+            local caution = stop.kind ~= "turnin" and ns.CautionText(stop.questLevel)
+            if caution then table.insert(texts, 1, caution) end
             for i, fs in ipairs(objectiveLines) do
                 if texts[i] then fs:SetText(texts[i]); fs:Show() else fs:Hide() end
             end
@@ -533,7 +535,9 @@ function HUD:Refresh()
             local st = stops[idx]
             if i <= want and st then
                 row.index, row.stop = idx, st
-                local kind = st.kind == "turnin" and ("  ·  " .. Widgets.Colorize("Hand in", ns.Colors.turnin)) or ""
+                local kind = st.kind == "turnin" and ("  ·  " .. Widgets.Colorize("Hand in", ns.Colors.turnin))
+                    or (ns.LevelCaution(st.questLevel) and ("  " .. Widgets.Colorize("(!)", ns.Colors.warn)))
+                    or ""
                 row.text:SetText(string.format("%d. %s%s", idx, st.title or "?", kind))
                 row:ClearAllPoints()
                 row:SetPoint("TOPLEFT", body, "TOPLEFT", 0, -y)

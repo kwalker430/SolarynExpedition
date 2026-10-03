@@ -218,6 +218,7 @@ local function buildSuggestionRow()
                 s.detail or "",
                 "Zone: " .. (s.uiMapID and ns:MapName(s.uiMapID) or "unknown"),
                 s.level and ("Level " .. s.level) or nil,
+                s.kind == ns.SUGGEST.OBJECTIVE and ns.CautionText(s.level) or nil,
                 s.questID and ("Quest ID " .. s.questID) or nil,
                 (s.x and s.y or not s.questID) and "" or "|cffff8040The client gave no map location for this quest.|r",
             },
@@ -242,12 +243,14 @@ local function fillSuggestionRow(row, s, index)
     local isQuest = s.kind == ns.SUGGEST.TURNOUT or s.kind == ns.SUGGEST.OBJECTIVE
     local missing = isQuest and not (s.x and s.y)
     if missing then detail = detail .. "  ·  no location" end
+    local caution = s.kind == ns.SUGGEST.OBJECTIVE and ns.LevelCaution(s.level)
+    if caution then detail = detail .. "  ·  " .. caution .. " above you" end
     row.sub:SetText(Widgets.Colorize(KIND_LABEL[s.kind] or "", c) .. "  " .. dim(detail))
 
     row.meta:SetText(s.distance and ns:FormatDistance(s.distance) or "")
     if s.level then
         local lc = levelColor(s.level)
-        row.level:SetText("Lv " .. s.level)
+        row.level:SetText((ns.LevelCaution(s.level) and s.kind == ns.SUGGEST.OBJECTIVE and "(!) " or "") .. "Lv " .. s.level)
         row.level:SetTextColor(lc.r, lc.g, lc.b)
     else
         row.level:SetText("")
@@ -293,6 +296,8 @@ local function buildRouteRow()
                 stop.kind == "turnin" and ("Hand in this quest" .. (stop.npcName and (" to " .. stop.npcName) or ""))
                     or "Work on an objective",
                 "Zone: " .. ns:MapName(stop.uiMapID),
+                stop.questLevel and ("Level " .. stop.questLevel) or nil,
+                stop.kind ~= "turnin" and ns.CautionText(stop.questLevel) or nil,
                 (stop.x and stop.y) and string.format("Position: %.1f, %.1f", stop.x * 100, stop.y * 100) or nil,
                 stop.overridden and "Position comes from a manual /sol pin." or nil,
                 "",
@@ -327,7 +332,8 @@ local function fillRouteRow(row, stop, index)
     local what = Widgets.Colorize(isTurnIn and "Hand in" or "Objective", c)
     local where = ns:MapName(stop.uiMapID)
     if stop.overridden then where = where .. "  ·  manual pin" end
-    row.sub:SetText(what .. "  " .. dim(where))
+    local caution = not isTurnIn and ns.CautionText(stop.questLevel)
+    row.sub:SetText(what .. "  " .. dim(where) .. (caution and ("  " .. caution) or ""))
 
     local d = distanceTo(stop)
     row.meta:SetText(d and ns:FormatDistance(d) or "")

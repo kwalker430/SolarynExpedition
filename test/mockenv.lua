@@ -774,6 +774,13 @@ function M.installCQuestLog()
         return nil
     end
 
+    -- Quest tags: M.QUESTS[id].tagID / tagName (81 = Dungeon, 62 = Raid).
+    function C_QuestLog.GetQuestTagInfo(questID)
+        local q = M.QUESTS[questID]
+        if not q or not q.tagID then return nil end
+        return { tagID = q.tagID, tagName = q.tagName }
+    end
+
     function C_QuestLog.GetQuestObjectives(questID)
         local q = M.QUESTS[questID]
         return q and q.objectives or nil

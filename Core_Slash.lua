@@ -423,6 +423,8 @@ local function run_where()
         yes("questsOnMap"), yes("nextWaypointAny"), yes("nextWaypoint"))
     outf("GetQuestUiMapID %s  C_TaskQuest %s  C_QuestLog.IsComplete %s  UiMapPoint %s",
         yes("questUiMapID"), yes("taskQuestLocation"), yes("questIsComplete"), yes("uiMapPoint"))
+    outf("quest tags: C_QuestLog.GetQuestTagInfo %s  GetQuestTagInfo %s",
+        yes("questTagInfo"), yes("questTagInfoOld"))
 
     local playerMap = ns:PlayerMapID()
     outf("you are on map %s (%s)", tostring(playerMap), ns:MapName(playerMap or -1))
@@ -456,6 +458,12 @@ local function run_where()
             end
             if ns.Has.nextWaypoint and playerMap then
                 table.insert(parts, "forMap=" .. fmt(ns.Try("C_QuestLog", "GetNextWaypointForMap", e.questID, playerMap)))
+            end
+            table.insert(parts, "lv=" .. tostring(e.level or "-"))
+            local tagID, tagName = ns.QuestData:TagInfo(e.questID)
+            if tagID or tagName then
+                table.insert(parts, string.format("tag=%s%s%s", tostring(tagID or "-"),
+                    tagName and (" " .. tagName) or "", e.isDungeon and " (dungeon)" or ""))
             end
             table.insert(parts, ns.QuestData:IsComplete(e.questID) and "done" or "open")
             out(string.format("  %d %s: %s",

@@ -1836,6 +1836,100 @@ check("the tracker's rebuild button rebuilds the route", (function()
     return ok
 end)())
 
+print("\n== quest level and dungeon quests ==")
+check("quests 3+ levels above you get a caution", (function()
+    -- The mock player is level 10.
+    return ns.LevelCaution(13) == 3 and ns.LevelCaution(12) == nil and ns.LevelCaution(5) == nil
+        and ns.CautionText(15):find("5 above you") ~= nil and ns.CautionText(11) == nil
+end)())
+check("the route prefers objectives at your level over nearer high-level ones", (function()
+    goHome()
+    playerState.mapX, playerState.mapY = 0.3, 0.4
+    ns.Settings().routeLevelWeight = 0.15
+    local function stops()
+        return {
+            { kind = "objective", questID = 1, questLevel = 16, uiMapID = 1, x = 0.4, y = 0.4, world = ns:WorldPos(1, 0.4, 0.4) },
+            { kind = "objective", questID = 2, questLevel = 10, uiMapID = 1, x = 0.3, y = 0.55, world = ns:WorldPos(1, 0.3, 0.55) },
+        }
+    end
+    local weighted = ns.Route.OrderStops(stops(), ns:PlayerPosition(1))
+    ns.Settings().routeLevelWeight = 0
+    local plain = ns.Route.OrderStops(stops(), ns:PlayerPosition(1))
+    ns.Settings().routeLevelWeight = ns.Defaults.settings.routeLevelWeight
+    goHome()
+    return weighted[1].questID == 2 and plain[1].questID == 1,
+        ("weighted first %d, plain first %d"):format(weighted[1].questID, plain[1].questID)
+end)())
+check("dungeon quests are tagged from the client", (function()
+    Mock.QUESTS[1003].tagID, Mock.QUESTS[1003].tagName = 81, "Dungeon"
+    ns.QuestData:Scan()
+    local tagged = ns.QuestData.cache[1003].isDungeon
+    Mock.QUESTS[1003].tagID, Mock.QUESTS[1003].tagName = nil, nil
+    ns.QuestData:Scan()
+    return tagged == true and ns.QuestData.cache[1003].isDungeon == false
+end)())
+check("dungeon quests stay off the route unless included", (function()
+    Mock.QUESTS[1003].tagID = 62                              -- raid counts too
+    ns.Settings().includeDungeons = false
+    ns.Route:Build()
+    local without = routeQuests()[1003]
+    ns.Settings().includeDungeons = true
+    ns.Route:Build()
+    local with = routeQuests()[1003]
+    Mock.QUESTS[1003].tagID = nil
+    ns.Settings().includeDungeons = false
+    ns.Route:Build()
+    return without == nil and with == true and routeQuests()[1003] == true
+end)())
+
+check("a finished dungeon quest's hand-in stays on the route", (function()
+    Mock.QUESTS[1002].tagID = 81                              -- 1002 is ready to hand in
+    ns.Settings().includeDungeons = false
+    ns.Route:Build()
+    local kept = routeQuests()[1002]
+    Mock.QUESTS[1002].tagID = nil
+    ns.Route:Build()
+    return kept == true
+end)())
+check("dungeon objectives are left out of the Next tab unless included", (function()
+    local function listed(id)
+        for _, s in ipairs(ns.Suggest:Recompute() or {}) do
+            if s.questID == id and s.kind == ns.SUGGEST.OBJECTIVE then return true end
+        end
+        return false
+    end
+    Mock.QUESTS[1001].tagID = 81
+    ns.Settings().includeDungeons = false
+    local hidden = not listed(1001)
+    ns.Settings().includeDungeons = true
+    local shown = listed(1001)
+    Mock.QUESTS[1001].tagID = nil
+    ns.Settings().includeDungeons = false
+    return hidden and shown and listed(1001)
+end)())
+check("QuestSortScore doesn't leak into the global namespace", rawget(_G, "QuestSortScore") == nil)
+check("high-level objectives are marked in the route tab and tracker", (function()
+    Mock.QUESTS[1005].level = 14
+    guideQuest(1005)
+    ns.Panel:Toggle(true)
+    ns.Panel:SetTab("route")
+    local marked, handInMarked = false, false
+    for _, row in ipairs(ns.Panel:ActiveRows()) do
+        local d = row.data
+        if d and d.questID == 1005 and d.kind == "objective" then
+            marked = (row.sub.text or ""):find("4 above you") ~= nil
+        elseif d and d.kind == "turnin" and (row.sub.text or ""):find("above you") then
+            handInMarked = true
+        end
+    end
+    local err = ns.Panel.lastError
+    local ok = pcall(function() ns.HUD:Refresh() end)
+    Mock.QUESTS[1005].level = 11
+    ns.Route:StopGuiding()
+    freshRoute()
+    return marked and not handInMarked and err == nil and ok, ("marked %s, err %s"):format(tostring(marked), tostring(err))
+end)())
+
 print("\n== client event registration ==")
 -- Regression: ns:RegisterEvent once only filled a Lua table, so in game the
 -- client never delivered QUEST_LOG_UPDATE & co. Tests that drive ns:Fire

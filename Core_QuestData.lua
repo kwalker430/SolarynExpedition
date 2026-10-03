@@ -79,6 +79,7 @@ function QuestData:Scan()
             entry.isHidden = info.isHidden and true or false
             entry.questClassification = info.questClassification
             entry.suggestedGroup = ns.SafeNum(info.suggestedGroup)
+            entry.isDungeon = QuestData:IsDungeon(questID)
             entry.inLog = true
 
             table.insert(list, entry)
@@ -128,6 +129,46 @@ function QuestData:IsComplete(questID)
         if not o.finished then return false end
     end
     return true
+end
+
+---------------------------------------------------------------------------
+-- Quest tags
+---------------------------------------------------------------------------
+-- Tag IDs (Enum.QuestTag) that mean the quest is done inside an instance.
+local INSTANCE_TAGS = { [62] = true, [81] = true, [85] = true, [88] = true, [89] = true }
+local function instanceTag()
+    local e = _G.Enum and _G.Enum.QuestTag
+    if type(e) == "table" then
+        for _, k in ipairs({ "Dungeon", "Raid", "Heroic", "Raid10", "Raid25" }) do
+            if type(e[k]) == "number" then INSTANCE_TAGS[e[k]] = true end
+        end
+    end
+    instanceTag = function() return INSTANCE_TAGS end
+    return INSTANCE_TAGS
+end
+
+--- The quest's tag as (tagID, tagName), either possibly nil. Read from
+-- C_QuestLog.GetQuestTagInfo (a table) or the older global GetQuestTagInfo
+-- (tagID, tagName).
+function QuestData:TagInfo(questID)
+    local tagID, tagName
+    if ns.Has.questTagInfo then
+        local info = ns.Try("C_QuestLog", "GetQuestTagInfo", questID)
+        if type(info) == "table" then tagID, tagName = info.tagID, info.tagName end
+    end
+    if tagID == nil and ns.Has.questTagInfoOld then
+        tagID, tagName = ns.Try("_G", "GetQuestTagInfo", questID)
+    end
+    tagName = ns.IsSafe(tagName) and type(tagName) == "string" and tagName or nil
+    return ns.SafeNum(tagID), tagName
+end
+
+--- Is this a dungeon or raid quest? False when the client can't tell.
+function QuestData:IsDungeon(questID)
+    local tagID, tagName = self:TagInfo(questID)
+    if tagID and instanceTag()[tagID] then return true end
+    if type(tagName) == "string" and (tagName:find("Dungeon") or tagName:find("Raid")) then return true end
+    return false
 end
 
 --- Fraction of objectives finished (0..1), or nil when there are none.

@@ -43,6 +43,8 @@ The top of the panel always shows your current zone, its level range and how muc
 ### Route guide
 - **Always up to date:** the route rebuilds itself whenever you accept, finish, hand in or drop a quest. While you're being guided, finished stops stay done and new quests slot in where they fit best.
 - **Areas first:** objectives near you come before walking back to hand in. A hand-in right on your way is picked up immediately.
+- **Your level first:** quests near your level come before ones far from it, and objectives 3 or more levels above you are marked `(!)` in the route, the tracker and the Next tab.
+- **No dungeon quests:** quests tagged Dungeon or Raid stay off the route and the Next tab unless you include them in the options. Once one is ready to hand in, its hand-in is routed like any other.
 - **Moves on when the work is done:** a stop counts as done when the quest's objectives are complete, not just because you arrived. When you finish a quest, its hand-in is added to the route and the rest is re-planned from where you stand.
 - **Numbered map pins:** route stops show on the world map. Hover a pin for details or click it to set a waypoint.
 
@@ -126,7 +128,7 @@ A compact tracker, in the style of the built-in quest tracker, appears while you
 
 Open with `/sol options`, the cog on the panel, or right-click the minimap button.
 - **Display:** minimap button, panel lock, route pins on the map.
-- **Route:** keep the route up to date automatically, auto-build on open, finish nearby objectives before handing in, wait until the quest work is done (or move on when you arrive), arrival distance, quests per route.
+- **Route:** keep the route up to date automatically, auto-build on open, finish nearby objectives before handing in, prefer quests at your level, include dungeon and raid quests, wait until the quest work is done (or move on when you arrive), arrival distance, quests per route.
 - **Route tracker:** show while guiding (or always), lock, size, number of upcoming stops, quest item buttons, tooltip quest info.
 - **Exploration tracking:** sampling interval and grid detail.
 - **Suggestions:** rank by distance, or by your own weights (distance, level, same zone, hand-ins, story and task quests).

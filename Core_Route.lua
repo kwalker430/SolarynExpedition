@@ -100,11 +100,29 @@ end
 -- the route finishes the objectives around you before walking back to hand
 -- in, the way you'd quest an area by hand. A hand-in that's almost on top of
 -- you (NEAR_HANDIN_YARDS) costs nothing extra: grab it on the way.
+--
+-- Objectives are also weighed by how far the quest's level is from yours
+-- (settings.routeLevelWeight per level), so quests at your level come first
+-- and ones well above it drift to the end. Levels below yours count half:
+-- those quests are safe, just worth less. Hand-ins aren't weighed by level;
+-- the dangerous part is already done.
 local NEAR_HANDIN_YARDS = 75
 local HANDIN_WEIGHT_BATCHED, HANDIN_WEIGHT_EAGER = 3.0, 1.15
 
+local function levelFactor(stop, playerLevel, perLevel)
+    local ql = tonumber(stop.questLevel)
+    if not ql or not playerLevel or perLevel <= 0 then return 1 end
+    local gap = ql - playerLevel
+    if gap < 0 then gap = -gap / 2 end
+    return 1 + gap * perLevel
+end
+Route.LevelFactor = levelFactor
+
 local function orderStops(stops, from)
-    local weight = ns.Settings().batchTurnIns and HANDIN_WEIGHT_BATCHED or HANDIN_WEIGHT_EAGER
+    local settings = ns.Settings()
+    local weight = settings.batchTurnIns and HANDIN_WEIGHT_BATCHED or HANDIN_WEIGHT_EAGER
+    local playerLevel = ns.UnitLevelSafe()
+    local perLevel = tonumber(settings.routeLevelWeight) or 0
     local pool, ordered = {}, {}
     for i, st in ipairs(stops) do pool[i] = st end
     local cur = from
@@ -112,7 +130,11 @@ local function orderStops(stops, from)
         local bestIdx, bestCost = 1, math.huge
         for i, st in ipairs(pool) do
             local d = (cur and ns:DistanceBetween(cur, st)) or 1e9
-            if st.kind == "turnin" and d > NEAR_HANDIN_YARDS then d = d * weight end
+            if st.kind == "turnin" then
+                if d > NEAR_HANDIN_YARDS then d = d * weight end
+            else
+                d = d * levelFactor(st, playerLevel, perLevel)
+            end
             if d < bestCost then bestIdx, bestCost = i, d end
         end
         local chosen = table.remove(pool, bestIdx)
@@ -123,6 +145,8 @@ local function orderStops(stops, from)
     return ordered
 end
 Route.OrderStops = orderStops
+
+local QuestSortScore   -- defined below Build
 
 --- Build a route from the current quest log.
 -- Returns a state table: { stops = {...}, built = time(), questIDs = {...} }
@@ -135,10 +159,14 @@ function Route:Build(opts)
     local entries = QuestData:Scan()
 
     -- Collect candidate quests, skipping headers and anything suppressed.
+    -- Dungeon quests stay out unless asked for: they can't be done on the way.
+    -- Once one is complete its hand-in is an ordinary stop, so it comes back.
     local candidates = {}
     for _, e in ipairs(entries) do
         if not e.isHeader and not e.isHidden then
-            if not (settings.ignoreTasks and e.isTask) then
+            local skipDungeon = e.isDungeon and not settings.includeDungeons
+                and not QuestData:IsComplete(e.questID)
+            if not (settings.ignoreTasks and e.isTask) and not skipDungeon then
                 table.insert(candidates, e)
             end
         end
@@ -218,7 +246,7 @@ end
 
 -- Ranking helper used inside Build. Declared here so it can reference the
 -- suggester weights without creating a load-order dependency.
-function QuestSortScore(entry, playerPos)
+function QuestSortScore(entry, playerPos)   -- the local declared above
     local settings = ns.Settings()
     local score = 0
 

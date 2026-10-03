@@ -83,7 +83,8 @@ function Suggest:Compute()
 
     for _, e in ipairs(ns.QuestData:Scan()) do
         if not e.isHeader and not e.isHidden and not ns.QuestData:IsComplete(e.questID) then
-            if not (settings.ignoreTasks and e.isTask) then
+            if not (settings.ignoreTasks and e.isTask)
+                and not (e.isDungeon and not settings.includeDungeons) then
                 -- Quests with no known location are still listed (ranked
                 -- lower): silently dropping them hid most of the quest log
                 -- whenever the client gave no marker.

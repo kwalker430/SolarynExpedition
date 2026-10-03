@@ -41,7 +41,11 @@ local function onSettingChanged(key, v)
     if key == "mapPins" then
         if v then ns.MapPins:DrawRoute() else ns.MapPins:ClearRoute() end
     end
-    if key:match("^w%u") or key == "suggestLimit" or key == "ignoreTasks" or key == "sortByDistance" then
+    if (key == "includeDungeons" or key == "routeLevelWeight") and ns.Route:Count() > 0 then
+        ns:Debounce("options-route", 0.3, function() ns.Route:Build() end)
+    end
+    if key:match("^w%u") or key == "suggestLimit" or key == "ignoreTasks" or key == "sortByDistance"
+        or key == "includeDungeons" then
         ns.Suggest:Recompute()
     end
 end
@@ -129,6 +133,11 @@ local function buildOptions()
         "Only rebuilds when your quest log has changed since the last build.")
     checkbox("Finish nearby objectives before handing in", "batchTurnIns",
         "Hand-ins wait until the quests around you are done, unless one is right on your way. Off: hand in as soon as a quest is complete.")
+    slider("Prefer quests at my level", "routeLevelWeight", 0, 0.5, 0.05,
+        function(v) return v == 0 and "off" or string.format("+%d%%/lv", math.floor(v * 100 + 0.5)) end,
+        "Each level a quest is above you makes its objectives count as this much farther away (levels below count half), so quests at your level come first. Quests 3 or more levels above you are marked with (!).")
+    checkbox("Include dungeon and raid quests", "includeDungeons",
+        "Off: quests tagged Dungeon or Raid are left out of the route and the Next tab until they're ready to hand in, since they're done inside an instance with a group.")
     checkbox("Include hand-in stops", "includeTurnIns",
         "Add a stop at the quest giver for quests you can turn in.")
     checkbox("Move on to the next stop automatically", "autoAdvance",
