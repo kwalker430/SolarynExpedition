@@ -50,6 +50,7 @@ ns.Defaults = {
         batchTurnIns = true,        -- route: finish nearby objectives before walking back to hand in
         routeLevelWeight = 0.15,    -- route: extra distance per level a quest is away from yours (0 = ignore level)
         includeDungeons = false,    -- route: include dungeon and raid quests
+        areaRadius = 60,            -- guide: yards around a kill/collect marker that count as "in the area" (0 = off)
         arriveRadius = 30,          -- guide: yards from a stop that count as "there"
 
         -- Route tracker (on-screen HUD)
@@ -121,6 +122,17 @@ function ns.LevelCaution(level)
     if type(level) ~= "number" or not p then return nil end
     local over = level - p
     return over >= ns.CAUTION_LEVELS and over or nil
+end
+
+--- How well a quest's level suits the player, for ranking: 1 at your level,
+-- easing to about 0.55 three levels off (below you counts half), then
+-- falling fast and going negative from 4 levels off, above or below.
+function ns.LevelFit(level, playerLevel)
+    if type(level) ~= "number" or type(playerLevel) ~= "number" then return 0 end
+    local off = math.abs(level - playerLevel)
+    local gentle = math.min(off, 3) * 0.15
+    if level < playerLevel then gentle = gentle / 2 end
+    return 1 - gentle - math.max(0, off - 3) * 0.5
 end
 
 --- Short warning text for a quest well above the player's level, or nil.

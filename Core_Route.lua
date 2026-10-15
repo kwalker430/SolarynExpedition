@@ -75,6 +75,14 @@ local function QuestStops(questID)
     end
 
     if hasPending then
+        -- "Kill 8 boars" or "collect 3 items" is a search over an area, not a
+        -- single spot: the marker is only its centre.
+        local area = false
+        for _, o in ipairs(pending) do
+            if (o.numRequired or 0) > 1 and (o.type == "monster" or o.type == "item" or o.type == "object") then
+                area = true
+            end
+        end
         local wps = QuestData:Waypoints(questID)
         -- An override, when present, replaces the client's positions entirely.
         local resolved, overridden = ns.Overrides:ResolveObjectives(questID, wps)
@@ -87,6 +95,7 @@ local function QuestStops(questID)
                     x = wp.x, y = wp.y,
                     world = wp.world,
                     overridden = overridden or nil,
+                    area = area or nil,
                 })
             end
         end
@@ -103,18 +112,26 @@ end
 --
 -- Objectives are also weighed by how far the quest's level is from yours
 -- (settings.routeLevelWeight per level), so quests at your level come first
--- and ones well above it drift to the end. Levels below yours count half:
--- those quests are safe, just worth less. Hand-ins aren't weighed by level;
+-- and ones 4+ levels off (above or below) drift to the end. Small gaps below
+-- yours count half: those quests are safe, just worth less. Hand-ins aren't weighed by level;
 -- the dangerous part is already done.
 local NEAR_HANDIN_YARDS = 75
 local HANDIN_WEIGHT_BATCHED, HANDIN_WEIGHT_EAGER = 3.0, 1.15
 
+-- A quest within LEVEL_RAMP levels of you costs a little extra per level;
+-- from LEVEL_STEEP levels away (too high to be safe, too low to be worth it)
+-- every further level costs STEEP_MULT times as much, so those quests drop
+-- to the end of the route unless nothing else is left.
+local LEVEL_RAMP, LEVEL_STEEP, STEEP_MULT = 3, 4, 4
+
 local function levelFactor(stop, playerLevel, perLevel)
     local ql = tonumber(stop.questLevel)
     if not ql or not playerLevel or perLevel <= 0 then return 1 end
-    local gap = ql - playerLevel
-    if gap < 0 then gap = -gap / 2 end
-    return 1 + gap * perLevel
+    local off = math.abs(ql - playerLevel)
+    local gentle = math.min(off, LEVEL_RAMP)
+    if ql < playerLevel then gentle = gentle / 2 end   -- below you: safe, just worth less
+    local steep = math.max(0, off - LEVEL_STEEP + 1)
+    return 1 + (gentle + steep * STEEP_MULT) * perLevel
 end
 Route.LevelFactor = levelFactor
 
@@ -161,9 +178,18 @@ function Route:Build(opts)
     -- Collect candidate quests, skipping headers and anything suppressed.
     -- Dungeon quests stay out unless asked for: they can't be done on the way.
     -- Once one is complete its hand-in is an ordinary stop, so it comes back.
+    -- Shelved quests (Route:Shelve) stay out too, until put back.
+    local shelved = self:ShelvedTable()
+    local inLog = {}
+    for _, e in ipairs(entries) do
+        if not e.isHeader then inLog[e.questID] = true end
+    end
+    for id in pairs(shelved) do
+        if not inLog[id] then shelved[id] = nil end    -- handed in or abandoned
+    end
     local candidates = {}
     for _, e in ipairs(entries) do
-        if not e.isHeader and not e.isHidden then
+        if not e.isHeader and not e.isHidden and not shelved[e.questID] then
             local skipDungeon = e.isDungeon and not settings.includeDungeons
                 and not QuestData:IsComplete(e.questID)
             if not (settings.ignoreTasks and e.isTask) and not skipDungeon then
@@ -194,22 +220,29 @@ function Route:Build(opts)
         return QuestSortScore(a, pp) > QuestSortScore(b, pp)
     end)
 
+    -- Order every located quest's stops into a walking route from the player,
+    -- and only then apply the quest limit. Cutting the list first (by score)
+    -- let far-off hand-ins crowd out the objectives right around you.
     local allStops = {}
-    local questIDs = {}
     for _, e in ipairs(located) do
-        if #questIDs < limit then
-            for _, s in ipairs(e._stops) do
-                s.title = e.title
-                s.questLevel = e.level
-                s.isTask = e.isTask
-                table.insert(allStops, s)
-            end
-            table.insert(questIDs, e.questID)
+        for _, s in ipairs(e._stops) do
+            s.title = e.title
+            s.questLevel = e.level
+            s.isTask = e.isTask
+            table.insert(allStops, s)
         end
     end
+    local full = orderStops(allStops, pp)
 
-    -- Order the individual stops into a walking route from the player.
-    local ordered = orderStops(allStops, pp)
+    local ordered, questIDs, kept = {}, {}, {}
+    for _, st in ipairs(full) do
+        if not kept[st.questID] and #questIDs < limit then
+            kept[st.questID] = true
+            table.insert(questIDs, st.questID)
+        end
+        if kept[st.questID] then table.insert(ordered, st) end
+    end
+    for i, st in ipairs(ordered) do st.index = i end
 
     -- While guiding, stops already reached stay done: they go first and the
     -- guide resumes after them. (Opening the panel rebuilds a stale route, and
@@ -265,8 +298,7 @@ function QuestSortScore(entry, playerPos)   -- the local declared above
 
     -- Level fit.
     if entry.level and ns.UnitLevelSafe then
-        local fit = 1 - math.min(1, math.abs(entry.level - ns.UnitLevelSafe()) / 10)
-        score = score + fit * settings.wLevel
+        score = score + ns.LevelFit(entry.level, ns.UnitLevelSafe()) * settings.wLevel
     end
 
     if entry.isStory then score = score + settings.wStory end
@@ -278,6 +310,69 @@ end
 ---------------------------------------------------------------------------
 -- Querying
 ---------------------------------------------------------------------------
+---------------------------------------------------------------------------
+-- Shelving: leave a quest off the route until you put it back
+---------------------------------------------------------------------------
+-- Saved per character as SolarynCharDB.shelved[questID] = title, so it
+-- survives reloads and rebuilds (unlike /sol skip, which only moves the guide
+-- past one stop). Shelved quests still show on the Next tab.
+function Route:ShelvedTable()
+    local char = ns.CharDB()
+    if not char then return {} end
+    char.shelved = char.shelved or {}
+    return char.shelved
+end
+
+function Route:IsShelved(questID)
+    return questID ~= nil and self:ShelvedTable()[questID] ~= nil
+end
+
+--- Sorted list of { questID, title } for shelved quests.
+function Route:ShelvedList()
+    local out = {}
+    for id, title in pairs(self:ShelvedTable()) do
+        table.insert(out, { questID = id, title = type(title) == "string" and title or ("Quest " .. id) })
+    end
+    table.sort(out, function(a, b) return a.title < b.title end)
+    return out
+end
+
+--- Leave a quest off the route. Returns its title, or nil if unknown.
+function Route:Shelve(questID)
+    questID = tonumber(questID)
+    if not questID then return nil end
+    local title = ns.Try("C_QuestLog", "GetTitleForQuestID", questID)
+    if type(title) ~= "string" then
+        for _, st in ipairs(self:Get().stops or {}) do
+            if st.questID == questID then title = st.title end
+        end
+    end
+    title = type(title) == "string" and title or ("Quest " .. questID)
+    self:ShelvedTable()[questID] = title
+    self:Build()
+    return title
+end
+
+--- Put a quest back on the route. Returns false if it wasn't shelved.
+function Route:Unshelve(questID)
+    questID = tonumber(questID)
+    local t = self:ShelvedTable()
+    if not questID or not t[questID] then return false end
+    t[questID] = nil
+    self:Build()
+    return true
+end
+
+function Route:UnshelveAll()
+    local char = ns.CharDB()
+    if not char then return 0 end
+    local n = 0
+    for _ in pairs(char.shelved or {}) do n = n + 1 end
+    char.shelved = {}
+    if n > 0 then self:Build() end
+    return n
+end
+
 function Route:Count()
     return #(self:Get().stops or {})
 end
@@ -632,8 +727,8 @@ ns:RegisterEvent("QUEST_LOG_UPDATE", onQuestLogChanged, Route)
 -- Keeping the route current. Every quest event funnels into one debounced
 -- Sync: if the set of quests in the log, or which of them are complete, has
 -- changed since the last sync (a quest accepted, finished, handed in or
--- abandoned), the route is rebuilt from where the player stands. Objective
--- progress alone ("4/8") doesn't rebuild. While guiding, Build keeps the
+-- abandoned, or an objective count moved), the route is rebuilt from where
+-- the player stands. While guiding, Build keeps the
 -- stops already reached, so the guide carries on from the re-optimised route;
 -- then the current stop is checked for completion as before.
 local lastSyncPrint
@@ -643,7 +738,13 @@ local function logFingerprint()
     local parts = {}
     for _, e in ipairs(ns.QuestData:Scan()) do
         if not e.isHeader then
-            parts[#parts + 1] = e.questID .. (ns.QuestData:IsComplete(e.questID) and ":c" or ":o")
+            -- Objective counts are part of it: picking up one of three items
+            -- moves the quest's marker to the next camp, so the route must follow.
+            local n = 0
+            for _, o in ipairs(ns.QuestData:Objectives(e.questID)) do
+                n = n + (o.numFulfilled or 0) + (o.finished and 1 or 0)
+            end
+            parts[#parts + 1] = e.questID .. (ns.QuestData:IsComplete(e.questID) and ":c" or ":o") .. n
         end
     end
     table.sort(parts)

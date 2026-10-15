@@ -147,6 +147,9 @@ local function buildOptions()
     slider("Arrival distance", "arriveRadius", 10, 100, 5,
         function(v) return string.format("%d yd", v) end,
         "How close to a stop counts as arriving (used only when not waiting for the quest work).")
+    slider("Search area", "areaRadius", 0, 150, 10,
+        function(v) return v == 0 and "off" or string.format("%d yd", v) end,
+        "Kill and collect quests: within this distance of the marker the tracker says \"in the area\" instead of counting down yards.")
     checkbox("Clear the waypoint when the route is finished", "clearWaypointOnArrive")
     slider("Quests per route", "maxRouteQuests", 1, 30, 1,
         function(v) return string.format("%d", v) end,

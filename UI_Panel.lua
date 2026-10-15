@@ -111,7 +111,7 @@ end
 ---------------------------------------------------------------------------
 -- Row pool
 ---------------------------------------------------------------------------
-local pools = { suggestion = {}, route = {}, zone = {}, level = {}, header = {} }
+local pools = { suggestion = {}, route = {}, zone = {}, level = {}, header = {}, shelved = {} }
 local activeRows = {}
 
 local function releaseRows()
@@ -283,7 +283,10 @@ local function buildRouteRow()
     row.sub:SetPoint("RIGHT", row.tag, "LEFT", -6, 0)
 
     row.onClick = function(stop, button)
-        if button == "RightButton" then
+        if IsShiftKeyDown and IsShiftKeyDown() and stop.questID then
+            ns.Route:Shelve(stop.questID)
+            Panel:Refresh()
+        elseif button == "RightButton" then
             ns.MapPins:OpenAt(stop.uiMapID, stop.x, stop.y)
         else
             Panel:GoToStop(stop)
@@ -302,10 +305,38 @@ local function buildRouteRow()
                 stop.overridden and "Position comes from a manual /sol pin." or nil,
                 "",
                 "Click: guide from this stop",
+                "Shift-click: shelve this quest (leave it off the route)",
             },
         }
     end
     return row
+end
+
+--- A quest left off the route; click to put it back.
+local function buildShelvedRow()
+    local row = baseRow("shelved", 28)
+    row.meta = Widgets:Line(row, "", "GameFontNormalSmall", "RIGHT")
+    row.meta:SetPoint("RIGHT", -8, 0)
+    row.meta:SetWidth(60)
+    row.title = Widgets:Line(row, "", "GameFontHighlight")
+    row.title:SetPoint("LEFT", 12, 0)
+    row.title:SetPoint("RIGHT", row.meta, "LEFT", -6, 0)
+    row.onClick = function(e)
+        ns.Route:Unshelve(e.questID)
+        Panel:Refresh()
+    end
+    row.tooltip = function(e)
+        return { title = e.title, lines = { "Left off the route.", "", "Click: put it back on the route" } }
+    end
+    return row
+end
+
+local function fillShelvedRow(row, e)
+    row.data = e
+    row.bar:SetColorTexture(ns.Colors.dim.r, ns.Colors.dim.g, ns.Colors.dim.b, 0.5)
+    row:SetAlpha(0.8)
+    row.title:SetText(e.title)
+    row.meta:SetText(dim("Restore"))
 end
 
 local CHECK = "|TInterface\\RaidFrame\\ReadyCheck-Ready:12:12|t"
@@ -548,7 +579,8 @@ end
 
 local function renderRoute()
     local stops = ns.Route:Get().stops or {}
-    if #stops == 0 then
+    local shelved = ns.Route:ShelvedList()
+    if #stops == 0 and #shelved == 0 then
         showEmpty("No route yet",
             "Build a route to order your quest objectives and hand-ins into one walkable path.",
             "Build route", function() Panel:BuildRoute() end)
@@ -556,6 +588,12 @@ local function renderRoute()
     end
     for i, stop in ipairs(stops) do
         fillRouteRow(acquire("route", buildRouteRow), stop, i)
+    end
+    if #shelved > 0 then
+        addHeader("Shelved", "left off the route; click to restore")
+        for _, e in ipairs(shelved) do
+            fillShelvedRow(acquire("shelved", buildShelvedRow), e)
+        end
     end
     fitInner(layoutRows())
 end

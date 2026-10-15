@@ -138,6 +138,7 @@ function ns.OnAddonLoaded(_, name)
     char.route = char.route or {}
     char.stats = char.stats or {}
     char.suggestOverrides = char.suggestOverrides or {}
+    char.shelved = char.shelved or {}
 
     -- Probe which APIs this build actually exposes. Forever is in beta and the
     -- API surface is still moving; every consumer of an optional API checks

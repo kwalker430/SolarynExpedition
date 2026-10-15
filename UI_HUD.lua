@@ -43,6 +43,7 @@ local itemsPending = false     -- an update waiting for combat to end
 
 local frame, header, body
 local titleText, countText, skipButton, stopButton, collapseButton, rebuildButton
+local shelveButton, restoreButton
 local arrow, stopTitle, stopWhere, objectiveLines = nil, nil, nil, {}
 local upcomingRows = {}
 local currentBlock, startButton
@@ -115,7 +116,11 @@ local function buildUpcomingRow(i)
     row.text:SetPoint("RIGHT", row.dist, "LEFT", -4, 0)
 
     row:SetScript("OnClick", function(self)
-        if self.index then ns.Route:Guide(self.index) end
+        if IsShiftKeyDown() and self.stop and self.stop.questID then
+            ns.Route:Shelve(self.stop.questID)
+        elseif self.index then
+            ns.Route:Guide(self.index)
+        end
     end)
     row:SetScript("OnEnter", function(self)
         local st = self.stop
@@ -125,6 +130,7 @@ local function buildUpcomingRow(i)
             ns:MapName(st.uiMapID),
             "",
             "Click: guide from this stop",
+            "Shift-click: shelve this quest",
         })
     end)
     row:SetScript("OnLeave", function() GameTooltip:Hide() end)
@@ -180,6 +186,28 @@ local function build()
     skipButton = smallButton(header, ">>", "Skip this stop", function() ns.Route:Advance("skipped") end)
     skipButton:SetPoint("RIGHT", stopButton, "LEFT", -2, 0)
 
+    -- Shelve the current stop's quest (kept off the route until restored).
+    shelveButton = smallButton(header, "S", "Shelve this quest", function()
+        local st = ns.Route:Next()
+        if st and st.questID then ns.Route:Shelve(st.questID) end
+    end)
+    Widgets:TooltipLines(shelveButton, "Shelve this quest",
+        { "Leave it off the route until you restore it.", "Remembered across reloads." })
+    shelveButton:SetPoint("RIGHT", skipButton, "LEFT", -2, 0)
+
+    -- Only shown while something is shelved: puts everything back.
+    restoreButton = smallButton(header, "R", "Restore shelved quests", function()
+        ns.Route:UnshelveAll()
+    end)
+    restoreButton:SetScript("OnEnter", function(self)
+        local lines = {}
+        for _, e in ipairs(ns.Route:ShelvedList()) do table.insert(lines, e.title) end
+        table.insert(lines, "")
+        table.insert(lines, "Click: put them all back on the route")
+        Widgets:ShowTooltip(self, "Shelved quests", lines)
+    end)
+    restoreButton:SetPoint("RIGHT", shelveButton, "LEFT", -2, 0)
+
     -- Rebuild on demand (the route also rebuilds itself on quest changes).
     rebuildButton = smallButton(header, "", "Rebuild route", function() HUD:RebuildRoute() end)
     rebuildButton.text:SetText("")
@@ -190,7 +218,7 @@ local function build()
     rebuildButton.icon = refresh
     Widgets:TooltipLines(rebuildButton, "Rebuild route",
         { "Re-plan the remaining stops from where you are.", "Stops you've finished stay done." })
-    rebuildButton:SetPoint("RIGHT", skipButton, "LEFT", -2, 0)
+    rebuildButton:SetPoint("RIGHT", restoreButton, "LEFT", -2, 0)
 
     titleText = Widgets:Line(header, "ROUTE", "GameFontNormalSmall")
     titleText:SetPoint("LEFT", 6, 0)
@@ -440,15 +468,21 @@ function HUD:UpdateLive()
 
     local d = ns.Route:DistanceTo(stop)
     local where = ns:MapName(stop.uiMapID)
-    stopWhere:SetText(d and (where .. "  ·  " .. ns:FormatDistance(d)) or where)
+    local radius = tonumber(ns.Settings().areaRadius) or 0
+    local inArea = stop.area and d and radius > 0 and d <= radius
+    if inArea then
+        stopWhere:SetText(where .. "  ·  in the area")
+    else
+        stopWhere:SetText(d and (where .. "  ·  " .. ns:FormatDistance(d)) or where)
+    end
 
-    local angle = HUD.RelativeAngle(stop)
+    local angle = not inArea and HUD.RelativeAngle(stop) or nil
     if angle then
         arrow:SetRotation(angle)
         arrow:SetVertexColor(1, 1, 1, 1)
         arrow:Show()
     else
-        -- Different map: no reliable direction, so show it faded and upright.
+        -- Different map, or already in the search area: no useful direction.
         arrow:SetRotation(0)
         arrow:SetVertexColor(0.5, 0.5, 0.5, 0.5)
     end
@@ -495,6 +529,8 @@ function HUD:Refresh()
     countText:SetText(string.format("%d/%d", cur, #stops))
     titleText:SetText(guiding and "ROUTE" or "ROUTE  " .. Widgets.Colorize("(paused)", ns.Colors.dim))
     if guiding then skipButton:Show(); stopButton:Show() else skipButton:Hide(); stopButton:Hide() end
+    if #stops > 0 then shelveButton:Show() else shelveButton:Hide() end
+    if #ns.Route:ShelvedList() > 0 then restoreButton:Show() else restoreButton:Hide() end
     collapseButton.text:SetText(s.hudCollapsed and "+" or "-")
 
     local height = 20
@@ -575,6 +611,8 @@ function HUD:RebuildRoute()
 end
 
 function HUD:GetRebuildButton() return rebuildButton end
+function HUD:GetShelveButton() return shelveButton end
+function HUD:GetRestoreButton() return restoreButton end
 
 function HUD:GetFrame() return frame end
 

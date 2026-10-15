@@ -335,6 +335,7 @@ check("/sol empty toggles panel", pcall(ns.Slash.dispatch, ""))
 -- /sol pin was documented but never registered, and this test used to pass
 -- just because the fallback didn't error.
 check("/sol pin with no quest lists your quests", (function()
+    ns.Route:StopGuiding()
     local text = chatAfter(function() ns.Slash.dispatch("pin") end)
     return text:find("Usage: /sol pin", 1, true) ~= nil, text
 end)())
@@ -343,6 +344,25 @@ check("/sol pin <questID> records your position for that quest", (function()
     local rec = ns.Overrides:Get(1004)
     ns.Overrides:Clear(1004)
     return rec ~= nil
+end)())
+check("/sol pin add keeps earlier spots, clear removes them", (function()
+    ns.Overrides:Clear(1004)
+    ns.Slash.dispatch("pin 1004")
+    ns.Slash.dispatch("pin 1004 add")
+    local n = #(ns.Overrides:Get(1004).objectives)
+    ns.Slash.dispatch("pin 1004 clear")
+    return n == 2 and ns.Overrides:Get(1004) == nil, tostring(n)
+end)())
+check("/sol pin turnin records the hand-in and the route uses it", (function()
+    local objs, saved = Mock.QUESTS[1002].objectives, {}
+    for k, o in ipairs(objs) do saved[k] = o.finished; o.finished = true end
+    ns.Slash.dispatch("pin 1002 turnin")
+    local rec = ns.Overrides:Get(1002)
+    local loc = ns.QuestData:TurnInLocation(1002)
+    ns.Overrides:Clear(1002)
+    for k, o in ipairs(objs) do o.finished = saved[k] end
+    return rec and rec.turnIn ~= nil and loc ~= nil and loc.uiMapID == rec.turnIn.uiMapID
+        and math.abs(loc.x - rec.turnIn.x) < 0.0001
 end)())
 check("every command is in the help, and every help entry is a command", (function()
     local inHelp = {}
@@ -371,7 +391,7 @@ check("every command is in README.md", (function()
 end)())
 check("/sol help <command> gives details and an example", (function()
     local text = chatAfter(function() ns.Slash.dispatch("help pin") end)
-    return text:find("/sol pin <questID>", 1, true) and text:find("Example", 1, true), text
+    return text:find("/sol pin [questID]", 1, true) and text:find("Example", 1, true), text
 end)())
 -- In game there was no way to get /sol api and /sol where output out of the
 -- client; they're now saved to SavedVariables and /sol report opens a copy.
@@ -1765,7 +1785,7 @@ check("accepting a quest rebuilds the route with it", (function()
     ns:Fire("QUEST_REMOVED", 1006)
     return has == true and not routeQuests()[1006]
 end)())
-check("objective progress alone doesn't rebuild", (function()
+check("objective progress rebuilds once, an unchanged log doesn't", (function()
     freshRoute(); ns.Route:ResetSync(); ns:Fire("QUEST_LOG_UPDATE")
     local built = ns.Route:Get().built
     local realBuild, calls = ns.Route.Build, 0
@@ -1774,9 +1794,62 @@ check("objective progress alone doesn't rebuild", (function()
     local old = o.numFulfilled
     o.numFulfilled = 5
     ns:Fire("QUEST_LOG_UPDATE")
+    local afterProgress = calls
+    ns:Fire("QUEST_LOG_UPDATE")
     o.numFulfilled = old
     ns.Route.Build = realBuild
-    return calls == 0, tostring(calls) .. " rebuilds"
+    return afterProgress == 1 and calls == 1, tostring(afterProgress) .. "/" .. tostring(calls) .. " rebuilds"
+end)())
+check("picking up one of several items moves the guide to the next camp", (function()
+    freshRoute(); ns.Route:ResetSync(); ns:Fire("QUEST_LOG_UPDATE")
+    local q = Mock.QUESTS[1001]
+    local oldWp, o = q.wp, q.objectives[1]
+    local oldN = o.numFulfilled
+    ns.Route:Guide(stopIndex(1001, "objective") or 1)
+    q.wp = { mapID = 1, x = 0.9, y = 0.9 }          -- the client's marker moves to camp 2
+    o.numFulfilled = oldN + 1
+    ns:Fire("QUEST_LOG_UPDATE")
+    local cur = ns.Route:Next()
+    local at, stale
+    for _, st in ipairs(ns.Route:Get().stops) do
+        if st.questID == 1001 then
+            if math.abs(st.x - 0.9) < 0.001 then at = st end
+            if math.abs(st.x - 0.3) < 0.001 then stale = st end
+        end
+    end
+    q.wp, o.numFulfilled = oldWp, oldN
+    ns:Fire("QUEST_LOG_UPDATE")
+    return at ~= nil and stale == nil and ns.Route:IsGuiding(), at and "moved" or "still at the old camp"
+end)())
+check("kill/collect objectives are search areas, single-spot ones aren't", (function()
+    freshRoute()
+    local multi, single
+    for _, st in ipairs(ns.Route:Get().stops) do
+        if st.kind == "objective" then
+            local needs = 0
+            for _, o in ipairs(ns.QuestData:PendingObjectives(st.questID)) do
+                if (o.numRequired or 0) > 1 then needs = 1 end
+            end
+            if needs == 1 then multi = multi or st else single = single or st end
+        end
+    end
+    return multi ~= nil and multi.area == true and (single == nil or single.area == nil),
+        multi and tostring(multi.area) or "no multi-count stop"
+end)())
+check("tracker refreshes without error inside a search area", (function()
+    freshRoute()
+    local idx
+    for i, st in ipairs(ns.Route:Get().stops) do
+        if st.kind == "objective" and st.area then idx = i; break end
+    end
+    if not idx then return false, "no area stop" end
+    ns.Route:Guide(idx)
+    local stop = ns.Route:Next()
+    local real = ns.Route.DistanceTo
+    ns.Route.DistanceTo = function() return 10 end
+    local ok, err = pcall(ns.HUD.UpdateLive, ns.HUD)
+    ns.Route.DistanceTo = real
+    return ok and stop.area == true, tostring(err)
 end)())
 check("finishing a quest while not guiding still updates the route", (function()
     freshRoute(); ns.Route:ResetSync(); ns:Fire("QUEST_LOG_UPDATE")
@@ -2090,6 +2163,66 @@ check("OpenAt switches the map without SetMapPoint", (function()
 end)())
 
 ---------------------------------------------------------------------------
+print("\n== shelving quests ==")
+do
+    local function hasQuest(id)
+        for _, st in ipairs(ns.Route:Get().stops or {}) do
+            if st.questID == id then return true end
+        end
+        return false
+    end
+    ns.Route:Build()
+    local victim
+    for _, st in ipairs(ns.Route:Get().stops) do victim = victim or st.questID end
+    check("a quest is on the route to start with", victim ~= nil and hasQuest(victim))
+    ns.Route:Shelve(victim)
+    check("a shelved quest leaves the route", not hasQuest(victim))
+    ns.Route:Build()
+    check("it stays off after a rebuild", not hasQuest(victim))
+    check("it is saved on the character", _G.SolarynCharDB.shelved[victim] ~= nil)
+    check("it is listed", #ns.Route:ShelvedList() == 1 and ns.Route:ShelvedList()[1].questID == victim)
+    check("/sol unshelve with no ID lists it", (chatAfter(function() ns.Slash.dispatch("unshelve") end)):find(tostring(victim), 1, true) ~= nil)
+    ns.Slash.dispatch("unshelve " .. victim)
+    check("unshelving puts it back", hasQuest(victim) and not ns.Route:IsShelved(victim))
+    ns.Route:Shelve(victim)
+    check("unshelve all restores everything", ns.Route:UnshelveAll() == 1 and hasQuest(victim))
+    ns.Slash.dispatch("shelve")
+    check("/sol shelve with no ID shelves the current stop's quest", #ns.Route:ShelvedList() == 1)
+    ns.Route:UnshelveAll()
+    check("panel renders shelved quests without error", (function()
+        ns.Route:Shelve(victim)
+        ns.Panel:Toggle(true); ns.Panel:SetTab("route"); ns.Panel:Refresh()
+        local ok = ns.Panel.lastError == nil
+        ns.Route:UnshelveAll()
+        return ok, tostring(ns.Panel.lastError)
+    end)())
+end
+
+print("\n== shelving from the tracker ==")
+do
+    ns.Route:UnshelveAll()
+    ns.Route:Build(); ns.Route:Guide()
+    local st = ns.Route:Next()
+    local id = st.questID
+    local function click(b) b:GetScript("OnClick")(b) end
+    local Hud = ns.HUD
+    Hud:Refresh()
+    local shelve, restore = Hud:GetShelveButton(), Hud:GetRestoreButton()
+    check("tracker has a shelve button", shelve ~= nil)
+    check("tracker has a restore button", restore ~= nil)
+    if shelve and restore then
+        click(shelve)
+        check("shelve button shelves the current stop's quest", ns.Route:IsShelved(id))
+        Hud:Refresh()
+        check("restore button appears once something is shelved", restore:IsShown())
+        click(restore)
+        check("restore button puts it back", not ns.Route:IsShelved(id))
+        Hud:Refresh()
+        check("restore button hides again", not restore:IsShown())
+    end
+    check("tracker refreshes without error", Hud.lastError == nil, tostring(Hud.lastError))
+end
+
 print(string.format("\n========================================"));
 print(string.format("  %d passed, %d failed", pass, fail));
 print(string.format("========================================"));

@@ -355,10 +355,11 @@ end
 --   current = { mapID, name, range, status } or nil,
 --   next = { { mapID, name, range, distance, status, faction }, ... } best first,
 -- }
--- A next zone is one on this continent whose range still has room for the
--- player (at least two levels of headroom, starting no more than two levels
--- above them), not hostile-faction territory, ranked nearest first; zones
--- you're already in range for come before ones you'll grow into.
+-- A next zone is one on this continent that still has room for the player
+-- (its top is at least a level above them) and starts no more than two levels
+-- above them, not hostile-faction territory. Zones with comfortable headroom
+-- come first, then ones you're nearly outgrowing, then ones that open soon;
+-- nearest first within each.
 function ZoneData:Progression(maxResults)
     self:EnsureLoaded()
     local level = ns.UnitLevelSafe()
@@ -379,17 +380,19 @@ function ZoneData:Progression(maxResults)
         local r = self:LevelRange(z.mapID)
         if z.mapID ~= zone and r
             and not (r.faction and faction and r.faction ~= faction)
-            and r.min <= level + 2 and r.max >= level + 2 then
+            and r.min <= level + 2 and r.max >= level + 1 then
             table.insert(candidates, {
                 mapID = z.mapID, name = z.name, range = r, faction = r.faction,
                 status = self:LevelStatus(r, level),
                 distance = self:DistanceToZone(z.mapID),
                 inRange = level >= r.min,
+                tier = level < r.min and 3 or (level >= r.max - 1 and 2 or 1),
             })
         end
     end
     table.sort(candidates, function(a, b)
-        if a.inRange ~= b.inRange then return a.inRange end
+        -- 1: comfortably in range, 2: nearly outgrown, 3: opens within two levels.
+        if a.tier ~= b.tier then return a.tier < b.tier end
         if a.distance and b.distance and a.distance ~= b.distance then return a.distance < b.distance end
         if (a.distance ~= nil) ~= (b.distance ~= nil) then return a.distance ~= nil end
         return a.range.min < b.range.min

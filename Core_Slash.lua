@@ -83,6 +83,12 @@ local HELP = {
           "Puts a waypoint on the next stop and follows the route for you: when a quest's work is done (or it's handed in) the waypoint moves on by itself." },
         { "skip", "", "Skip the current stop",
           "Moves the guide to the following stop. Handy when you want to come back to something later." },
+        { "shelve", "[questID]", "Leave a quest off the route until you put it back",
+          "Unlike /sol skip, this is remembered across reloads and rebuilds. With no ID it shelves the quest of the current stop. Shift-click a stop in the Route tab does the same.",
+          "/sol shelve 91" },
+        { "unshelve", "[questID|all]", "Put a shelved quest back on the route",
+          "With no ID it lists your shelved quests and their IDs. 'all' restores every one. You can also click a shelved quest at the bottom of the Route tab.",
+          "/sol unshelve 91" },
         { "stop", "", "Stop the guide",
           "Stops following the route. The route itself is kept; /sol next picks it up again." },
         { "route", "", "Rebuild the route and print it",
@@ -100,9 +106,9 @@ local HELP = {
         { "where", "", "Show where each quest's location comes from",
           "For every quest in your log, prints which location source answered (world-map marker, waypoint, learned NPC...) or 'none'. Useful when a quest has no pin.",
           "/sol where" },
-        { "pin", "<questID>", "Record an objective's real position",
-          "Stand where the objective really is and run this: the position is saved and used instead of the client's for that quest (all characters). With no quest ID it lists the quests in your log with their IDs.",
-          "/sol pin 1001" },
+        { "pin", "[questID] [add|turnin|clear]", "Record a quest's real position",
+          "Stand where the objective really is and run this: the position is saved and used instead of the client's for that quest (all characters) and the route is rebuilt. 'add' records one more spot for a quest with several camps, 'turnin' records the hand-in, 'clear' forgets them. With no quest ID it uses the quest you're being guided to, or lists the quests in your log.",
+          "/sol pin 1001 add" },
         { "chain", "<from> <to>", "Record that one quest leads to another",
           "Links a quest to its follow-up so later steps of a chain you've started rank higher. Chains are also learned automatically when you hand in and accept.",
           "/sol chain 1001 1003" },
@@ -138,27 +144,51 @@ local function findHelp(name)
     end
 end
 
---- /sol pin — walk the user through recording an override for a quest.
--- Deliberately interactive-but-simple: it lists the quests in the log so the
--- user can name one, then captures the current position as the override.
+--- /sol pin — record where a quest's objective or hand-in really is.
+-- /sol pin <questID>          objective here (replaces any recorded ones)
+-- /sol pin <questID> add      another objective spot (a quest with several camps)
+-- /sol pin <questID> turnin   the hand-in is here
+-- /sol pin <questID> clear    forget what was recorded
+-- With no quest ID it uses the quest of the stop being guided, or lists the log.
+local function round4(v) return math.floor(v * 10000 + 0.5) / 10000 end
+
 local function cmdPin(arg)
-    arg = (arg or ""):gsub("%s+", "")
-    if arg == "" then
-        printList({
-            "Usage: /sol pin <questID>",
-            "Quests in your log:",
-        })
-        for _, e in ipairs(ns.QuestData:Scan()) do
-            if not e.isHeader then
-                DEFAULT_CHAT_FRAME:AddMessage(string.format("    %d  %s", e.questID, ns:Truncate(e.title, 40)))
+    local idText, mode = (arg or ""):match("^%s*(%d*)%s*(%a*)%s*$")
+    if not idText then
+        ns:Print("usage: /sol pin <questID> [add|turnin|clear]")
+        return
+    end
+    if idText == "" then
+        local stop = ns.Route:IsGuiding() and ns.Route:Next()
+        if stop and stop.questID then
+            idText = tostring(stop.questID)
+        else
+            printList({
+                "Usage: /sol pin <questID> [add|turnin|clear]",
+                "Quests in your log:",
+            })
+            for _, e in ipairs(ns.QuestData:Scan()) do
+                if not e.isHeader then
+                    DEFAULT_CHAT_FRAME:AddMessage(string.format("    %d  %s", e.questID, ns:Truncate(e.title, 40)))
+                end
             end
+            return
         end
+    end
+    mode = mode:lower()
+    if mode ~= "" and mode ~= "add" and mode ~= "turnin" and mode ~= "clear" then
+        ns:Print("unknown option '%s'. Use add, turnin or clear.", mode)
         return
     end
 
-    local questID = tonumber(arg)
-    if not questID then
-        ns:Print("'%s' is not a quest ID.", arg)
+    local questID = tonumber(idText)
+    local entry = ns.QuestData.cache[questID]
+    local title = entry and entry.title or ("quest " .. questID)
+
+    if mode == "clear" then
+        ns.Overrides:Clear(questID)
+        ns:Print("cleared the recorded positions for '%s'.", ns:Truncate(title, 30))
+        ns.Route:Build()
         return
     end
 
@@ -168,27 +198,29 @@ local function cmdPin(arg)
         ns:Print("could not read your position.")
         return
     end
+    local here = { uiMapID = mapID, x = round4(pos.x), y = round4(pos.y) }
+    local rec = ns.Overrides:Get(questID) or {}
+    rec.note = "Recorded manually with /sol pin on " .. date("%Y-%m-%d")
 
-    local entry = ns.QuestData.cache[questID]
-    local title = entry and entry.title or ("quest " .. questID)
-    local label = arg:match("^%d+%:(.*)$") or title
+    local what
+    if mode == "turnin" then
+        here.name = entry and entry.turnInName or nil
+        rec.turnIn = here
+        what = "hand-in"
+    else
+        here.label = title
+        if mode == "add" and rec.objectives then
+            table.insert(rec.objectives, here)
+        else
+            rec.objectives = { here }
+        end
+        what = "objective " .. #rec.objectives
+    end
+    ns.Overrides:Set(questID, rec)
 
-    ns.Overrides:Set(questID, {
-        objectives = {
-            {
-                uiMapID = mapID,
-                -- 0-1 map fractions; 4 places is well under a yard.
-                x = math.floor(pos.x * 10000 + 0.5) / 10000,
-                y = math.floor(pos.y * 10000 + 0.5) / 10000,
-                label = label,
-            },
-        },
-        note = "Recorded manually with /sol pin on " .. date("%Y-%m-%d"),
-    })
-
-    ns:Print("recorded an override for '%s' at %s (%.1f, %.1f).",
-        ns:Truncate(title, 30), ns:MapName(mapID), pos.x * 100, pos.y * 100)
-    ns:Print("Rebuild the route to use it: /sol route")
+    ns:Print("recorded %s for '%s' at %s (%.1f, %.1f).",
+        what, ns:Truncate(title, 30), ns:MapName(mapID), pos.x * 100, pos.y * 100)
+    ns.Route:Build()
 end
 
 ---------------------------------------------------------------------------
@@ -269,6 +301,38 @@ function COMMANDS.skip()
     end
     if not ns.Route:IsGuiding() then ns.Route:Guide() end
     ns.Route:Advance("skipped")
+end
+
+function COMMANDS.shelve(arg)
+    local id = tonumber(arg)
+    if not id then
+        local stop = ns.Route:Next()
+        id = stop and stop.questID
+    end
+    if not id then
+        ns:Print("no current stop to shelve. Use /sol shelve <questID>.")
+        return
+    end
+    local title = ns.Route:Shelve(id)
+    ns:Print("shelved %s. /sol unshelve %d puts it back.", ns:Truncate(title, 40), id)
+end
+
+function COMMANDS.unshelve(arg)
+    arg = arg and arg:match("^%s*(.-)%s*$") or ""
+    if arg == "all" then
+        ns:Print("put %d shelved quest(s) back on the route.", ns.Route:UnshelveAll())
+    elseif tonumber(arg) then
+        if ns.Route:Unshelve(arg) then
+            ns:Print("quest %s is back on the route.", arg)
+        else
+            ns:Print("quest %s isn't shelved.", arg)
+        end
+    else
+        local list = ns.Route:ShelvedList()
+        if #list == 0 then ns:Print("nothing is shelved.") return end
+        ns:Print("shelved quests (/sol unshelve <questID> or all):")
+        for _, e in ipairs(list) do ns:Print("  %d  %s", e.questID, e.title) end
+    end
 end
 
 function COMMANDS.hud()

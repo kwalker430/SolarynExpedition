@@ -102,7 +102,7 @@ function Suggest:Compute()
                     score = score + settings.wSameMap
                 end
                 if e.level and playerLevel then
-                    score = score + (1 - math.min(1, math.abs(e.level - playerLevel) / 10)) * settings.wLevel
+                    score = score + ns.LevelFit(e.level, playerLevel) * settings.wLevel
                 end
                 if e.isStory then score = score + settings.wStory end
                 if e.isTask then score = score + settings.wTask end

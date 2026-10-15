@@ -477,6 +477,16 @@ end
 -- it, so this is simply the finished quest's primary location.
 function QuestData:TurnInLocation(questID)
     if not self:IsComplete(questID) then return nil end
+    -- A hand-recorded hand-in (/sol pin <id> turnin) beats everything.
+    local rec = ns.Overrides and ns.Overrides:Get(questID)
+    if rec and rec.turnIn then
+        local t = ns.Overrides:ResolveTurnIn(questID, nil)
+        if t then
+            t.world = ns:WorldPos(t.uiMapID, t.x, t.y)
+            t.npcName = rec.turnIn.name
+            return t
+        end
+    end
     -- No marker from the client: fall back to the NPC we've seen take this
     -- quest, or the one who gave it (learned in Core_QuestGivers).
     return self:PrimaryWaypoint(questID)

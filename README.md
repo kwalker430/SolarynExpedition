@@ -43,9 +43,10 @@ The top of the panel always shows your current zone, its level range and how muc
 ### Route guide
 - **Always up to date:** the route rebuilds itself whenever you accept, finish, hand in or drop a quest. While you're being guided, finished stops stay done and new quests slot in where they fit best.
 - **Areas first:** objectives near you come before walking back to hand in. A hand-in right on your way is picked up immediately.
-- **Your level first:** quests near your level come before ones far from it, and objectives 3 or more levels above you are marked `(!)` in the route, the tracker and the Next tab.
+- **Your level first:** quests near your level come before ones far from it, and quests 4 or more levels above or below you drop to the end of the route and down the Next tab. Objectives 3 or more levels above you are marked `(!)` in the route, the tracker and the Next tab.
 - **No dungeon quests:** quests tagged Dungeon or Raid stay off the route and the Next tab unless you include them in the options. Once one is ready to hand in, its hand-in is routed like any other.
 - **Moves on when the work is done:** a stop counts as done when the quest's objectives are complete, not just because you arrived. When you finish a quest, its hand-in is added to the route and the rest is re-planned from where you stand.
+- **Search areas:** for "kill 8" or "collect 3" objectives the tracker says *in the area* once you're within the search radius (options → Search area), instead of counting yards to a single point.
 - **Numbered map pins:** route stops show on the world map. Hover a pin for details or click it to set a waypoint.
 
 ### On-screen route tracker
@@ -53,7 +54,7 @@ A compact tracker, in the style of the built-in quest tracker, appears while you
 - The current stop, its remaining objectives and a live distance.
 - A **direction arrow** relative to the way you're facing.
 - The next few stops; click one to jump ahead.
-- Header buttons: **rebuild** the route now, **skip** a stop, **stop** guiding, and collapse.
+- Header buttons: **rebuild** the route now, **skip** a stop, **S** to shelve its quest (and **R** to restore shelved quests), **stop** guiding, and collapse.
 - **Quest item buttons** for usable quest items in your bags. Bind **"Use quest item (guided quest)"** under *Key Bindings → AddOns*.
 
 ### Quest info in tooltips
@@ -61,7 +62,7 @@ A compact tracker, in the style of the built-in quest tracker, appears while you
 - **NPCs you've talked to** show the quests they still offer, with their levels (`Available: [7] The Fargodeep Mine`), and which of your quests they take back. This is learned as you play and shared across your characters.
 
 ### Zones and exploration
-- **Level ranges:** each zone's level range, coloured by how it suits you, plus advice on the nearest next zone on your continent.
+- **Level ranges:** each zone's level range, coloured by how it suits you, plus advice on the nearest zones on your continent that fit you: ones with room to level in first, then ones you're nearly outgrowing, then ones opening within two levels.
 - **Exploration coverage:** taken from your *Explore \<Zone\>* achievement when there is one, so a fully explored zone reads 100%. Hover a zone to see which areas you haven't found yet. Otherwise coverage comes from your world map's revealed areas and where you've walked.
 
 ---
@@ -94,6 +95,8 @@ A compact tracker, in the style of the built-in quest tracker, appears while you
 | `/sol` | Open or close the panel |
 | `/sol next` | Start the guide at the next stop. The waypoint moves on as you finish quests |
 | `/sol skip` | Skip the current stop |
+| `/sol shelve [questID]` | Leave a quest off the route until you put it back (remembered). With no ID, the current stop's quest |
+| `/sol unshelve [questID\|all]` | Put a shelved quest back. With no ID, list what's shelved |
 | `/sol stop` | Stop the guide (the route is kept) |
 | `/sol route` | Rebuild the route from where you stand and print it |
 | `/sol map` | Open the world map at the current stop |
@@ -105,7 +108,7 @@ A compact tracker, in the style of the built-in quest tracker, appears while you
 |---|---|
 | `/sol suggestions` | Print the Next list to chat |
 | `/sol where` | Show where each quest's location comes from (or that it has none) |
-| `/sol pin <questID>` | Stand where an objective really is and save that spot for the quest. With no ID it lists your quests and their IDs |
+| `/sol pin [questID] [add\|turnin\|clear]` | Stand where an objective really is and save that spot for the quest. `add` records another camp, `turnin` the hand-in, `clear` forgets them. With no ID it uses the quest you're guided to, or lists your quests |
 | `/sol chain <from> <to>` | Record that one quest leads to another (chains are also learned automatically) |
 
 ### Zones & exploration

@@ -721,7 +721,7 @@ end
 --   1005 a story quest
 M.QUESTS = {
     [1001] = { title = "Kobold Camp Cleanup", level = 8,
-               objectives = { { text = "Kobold Vermin: 4/8", finished = false, numFulfilled = 4, numRequired = 8 } },
+               objectives = { { text = "Kobold Vermin: 4/8", type = "monster", finished = false, numFulfilled = 4, numRequired = 8 } },
                wp = { mapID = 1, x = 0.3, y = 0.4 } },
     [1002] = { title = "A Threat Within", level = 10,
                objectives = { { text = "Defeat the kobold leader", finished = true } },
