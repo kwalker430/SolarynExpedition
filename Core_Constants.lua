@@ -37,6 +37,7 @@ ns.Defaults = {
         minimapButton = true,
         minimapPos = 220,           -- degrees around the minimap ring
         showLoginMessage = true,
+        optionsCategory = "general", -- last options page shown
 
         -- Route
         maxRouteQuests = 12,
@@ -59,6 +60,7 @@ ns.Defaults = {
         hudLocked = false,
         hudUpcoming = 3,            -- upcoming stops listed under the current one
         hudScale = 1.0,
+        hudOpacity = 0.75,          -- tracker background (0 = text and frame only)
         hudCollapsed = false,
         questItemButtons = true,    -- buttons for the guided quests' usable items
         questTooltips = true,       -- quest info in mob/NPC/object tooltips

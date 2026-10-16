@@ -1,13 +1,15 @@
 --[[---------------------------------------------------------------------------
     Solaryn's Expedition — shared UI building blocks.
 
-    The panel and options window share one look: a flat dark body, a thin
-    bronze border, a draggable title bar with a gold title and a standard close
-    button. Everything here builds that look so the windows never drift apart.
+    Every window, the tracker and the options share one look, an explorer's
+    field kit: a deep ink body, a bronze frame with gold corner brackets like
+    the edge of a map, gold headings and flat bronze-trimmed controls. Building
+    it all here keeps the windows from drifting apart.
 
     Colour fills are always Textures. Frames have no SetColorTexture in the
     real client (the mock enforces this too), so a "coloured frame" is a frame
-    holding a texture made by Widgets:Fill.
+    holding a texture made by Widgets:Fill. Only stock client textures are
+    used, so nothing ships as an image file.
 -----------------------------------------------------------------------------]]
 
 local ADDON_NAME = ...
@@ -21,13 +23,31 @@ local WHITE = "Interface\\Buttons\\WHITE8X8"
 
 -- Palette for chrome (content colours live in ns.Colors).
 Widgets.Theme = {
-    bg        = { 0.05, 0.05, 0.07, 0.94 },
-    border    = { 0.42, 0.34, 0.18, 0.95 },
-    titleBg   = { 0.10, 0.09, 0.07, 1.00 },
-    sectionBg = { 0.09, 0.09, 0.11, 0.95 },
-    rowHover  = { 1.00, 1.00, 1.00, 0.06 },
-    rowAlt    = { 1.00, 1.00, 1.00, 0.025 },
-    divider   = { 0.42, 0.34, 0.18, 0.45 },
+    bg         = { 0.035, 0.034, 0.042, 0.96 },   -- window body: ink
+    hudBg      = { 0.020, 0.020, 0.028 },         -- tracker body (alpha from settings)
+    card       = { 0.090, 0.082, 0.070, 0.85 },   -- a raised group of rows
+    cardEdge   = { 0.34, 0.27, 0.14, 0.55 },
+    nav        = { 0.055, 0.050, 0.046, 1.00 },   -- options sidebar
+    border     = { 0.56, 0.44, 0.21, 1.00 },      -- bronze frame
+    shadow     = { 0.00, 0.00, 0.00, 0.70 },
+    hairline   = { 1.00, 0.82, 0.40, 0.09 },      -- faint gold inner line
+    bracket    = { 1.00, 0.82, 0.36, 0.95 },      -- gold corner brackets
+    titleBg    = { 0.105, 0.082, 0.050, 1.00 },
+    titleSheen = { 1.00, 0.80, 0.40, 0.045 },
+    sectionBg  = { 0.09, 0.09, 0.11, 0.95 },
+    rowHover   = { 1.00, 0.86, 0.50, 0.06 },
+    rowAlt     = { 1.00, 1.00, 1.00, 0.025 },
+    divider    = { 0.56, 0.44, 0.21, 0.40 },
+    gold       = { 1.00, 0.82, 0.30, 1.00 },
+    goldDeep   = { 0.62, 0.46, 0.14, 1.00 },
+    track      = { 0.15, 0.14, 0.13, 1.00 },
+    trackOff   = { 0.20, 0.19, 0.18, 1.00 },
+    knobOff    = { 0.55, 0.53, 0.50, 1.00 },
+    btnBg      = { 0.125, 0.095, 0.055, 0.95 },
+    btnSheen   = { 1.00, 0.85, 0.50, 0.05 },
+    btnHover   = { 1.00, 0.82, 0.30, 0.14 },
+    primaryBg  = { 0.42, 0.30, 0.08, 0.95 },
+    selected   = { 1.00, 0.82, 0.30, 0.12 },
 }
 local T = Widgets.Theme
 
@@ -43,9 +63,9 @@ Widgets.BACKDROP = BACKDROP
 function Widgets.Hex(c)
     if not c then return "ffffffff" end
     return string.format("ff%02x%02x%02x",
-        math.floor((c.r or 1) * 255 + 0.5),
-        math.floor((c.g or 1) * 255 + 0.5),
-        math.floor((c.b or 1) * 255 + 0.5))
+        math.floor((c.r or c[1] or 1) * 255 + 0.5),
+        math.floor((c.g or c[2] or 1) * 255 + 0.5),
+        math.floor((c.b or c[3] or 1) * 255 + 0.5))
 end
 
 function Widgets.Colorize(text, c)
@@ -61,6 +81,68 @@ function Widgets:Fill(parent, layer, r, g, b, a)
     local t = parent:CreateTexture(nil, layer or "BACKGROUND")
     t:SetColorTexture(r or 0, g or 0, b or 0, a or 1)
     return t
+end
+
+--- A 1px frame drawn with four fills, `inset` pixels in from the edge
+-- (negative draws outside it). Returns the edge list; :SetColor(r,g,b,a)
+-- recolours all four.
+function Widgets:Border(frame, color, inset, layer)
+    inset = inset or 0
+    local edges = {}
+    local function edge()
+        local t = self:Fill(frame, layer or "BORDER", color)
+        edges[#edges + 1] = t
+        return t
+    end
+    local top = edge()
+    top:SetPoint("TOPLEFT", inset, -inset); top:SetPoint("TOPRIGHT", -inset, -inset); top:SetHeight(1)
+    local bottom = edge()
+    bottom:SetPoint("BOTTOMLEFT", inset, inset); bottom:SetPoint("BOTTOMRIGHT", -inset, inset); bottom:SetHeight(1)
+    local left = edge()
+    left:SetPoint("TOPLEFT", inset, -inset); left:SetPoint("BOTTOMLEFT", inset, inset); left:SetWidth(1)
+    local right = edge()
+    right:SetPoint("TOPRIGHT", -inset, -inset); right:SetPoint("BOTTOMRIGHT", -inset, inset); right:SetWidth(1)
+    function edges.SetColor(_, r, g, b, a)
+        if type(r) == "table" then r, g, b, a = r[1], r[2], r[3], r[4] end
+        for _, t in ipairs(edges) do t:SetColorTexture(r, g, b, a or 1) end
+    end
+    return edges
+end
+
+--- Gold L-shaped brackets on the four corners, like the frame of a map.
+function Widgets:Brackets(frame, size, color, layer)
+    size = size or 8
+    local list = {}
+    for _, corner in ipairs({ "TOPLEFT", "TOPRIGHT", "BOTTOMLEFT", "BOTTOMRIGHT" }) do
+        local h = self:Fill(frame, layer or "OVERLAY", color or T.bracket)
+        h:SetSize(size, 2)
+        h:SetPoint(corner, 0, 0)
+        local v = self:Fill(frame, layer or "OVERLAY", color or T.bracket)
+        v:SetSize(2, size)
+        v:SetPoint(corner, 0, 0)
+        list[#list + 1] = h
+        list[#list + 1] = v
+    end
+    return list
+end
+
+--- The shared window chrome: a drop shadow, the ink body, a bronze border,
+-- a faint gold inner line and gold corner brackets. Returns the body fill
+-- (frame.chromeBg) so callers can change its opacity.
+function Widgets:Chrome(frame, opts)
+    opts = opts or {}
+    local bg = self:Fill(frame, "BACKGROUND", opts.bg or T.bg)
+    bg:SetAllPoints()
+    frame.chromeBg = bg
+    frame.chromeShadow = self:Border(frame, T.shadow, -1, "BACKGROUND")
+    frame.chromeBorder = self:Border(frame, opts.border or T.border, 0, "BORDER")
+    if opts.hairline ~= false then
+        frame.chromeHairline = self:Border(frame, T.hairline, 2, "BORDER")
+    end
+    if opts.brackets ~= false then
+        frame.chromeBrackets = self:Brackets(frame, opts.bracketSize or 10)
+    end
+    return bg
 end
 
 --- Apply the shared flat backdrop. Frames created without BackdropTemplate
@@ -100,6 +182,24 @@ function Widgets:Line(parent, text, template, justify)
     return fs
 end
 
+--- Wrapping, dimmed explanatory text at a fixed width. Returns the font
+-- string and its height, measured when the client can and estimated when it
+-- can't (an unloaded font measures 0).
+function Widgets:Note(parent, text, width)
+    local fs = self:Text(parent, text, "GameFontHighlightSmall")
+    fs:SetTextColor(ns.Colors.dim.r, ns.Colors.dim.g, ns.Colors.dim.b)
+    if type(fs.SetWordWrap) == "function" then fs:SetWordWrap(true) end
+    if type(fs.SetJustifyV) == "function" then fs:SetJustifyV("TOP") end
+    fs:SetWidth(width)
+    local h = type(fs.GetStringHeight) == "function" and ns.SafeNum(fs:GetStringHeight()) or 0
+    if not h or h <= 0 then
+        local perLine = math.max(1, math.floor(width / 5.4))
+        h = math.ceil(#(text or "") / perLine) * 12
+    end
+    fs:SetHeight(h)
+    return fs, h
+end
+
 --- Coloured label.
 function Widgets:Label(parent, text, color)
     local fs = self:Text(parent, text, "GameFontNormalSmall")
@@ -107,11 +207,72 @@ function Widgets:Label(parent, text, color)
     return fs
 end
 
---- A standard red-panel button.
-function Widgets:Button(parent, text, width, height, onClick)
-    local b = CreateFrame("Button", nil, parent, "UIPanelButtonTemplate")
-    b:SetSize(width or 90, height or 22)
+--- Small gold section heading with a rule that fades out to the right.
+-- Returns the holder frame (height 18).
+function Widgets:Heading(parent, text)
+    local holder = CreateFrame("Frame", nil, parent)
+    holder:SetHeight(18)
+    local fs = self:Line(holder, string.upper(text or ""), "GameFontNormalSmall")
+    fs:SetPoint("LEFT", 2, 0)
+    fs:SetTextColor(ns.Colors.header.r, ns.Colors.header.g, ns.Colors.header.b)
+    holder.text = fs
+    local near = self:Fill(holder, "ARTWORK", T.border[1], T.border[2], T.border[3], 0.55)
+    near:SetHeight(1)
+    near:SetPoint("LEFT", fs, "RIGHT", 8, 0)
+    near:SetPoint("RIGHT", holder, "CENTER", 30, 0)
+    local far = self:Fill(holder, "ARTWORK", T.border[1], T.border[2], T.border[3], 0.18)
+    far:SetHeight(1)
+    far:SetPoint("LEFT", near, "RIGHT", 0, 0)
+    far:SetPoint("RIGHT", holder, "RIGHT", -2, 0)
+    return holder
+end
+
+--- A raised card: slightly lighter than the window, with a soft bronze edge.
+function Widgets:Card(parent)
+    local card = CreateFrame("Frame", nil, parent)
+    local bg = self:Fill(card, "BACKGROUND", T.card)
+    bg:SetAllPoints()
+    card.edge = self:Border(card, T.cardEdge, 0, "BORDER")
+    return card
+end
+
+--- A flat bronze-trimmed button. `style` "primary" gives it a gold fill for
+-- the main action of a view.
+function Widgets:Button(parent, text, width, height, onClick, style)
+    height = height or 22
+    local b = CreateFrame("Button", nil, parent)
+    b:SetSize(width or 90, height)
+
+    local primary = style == "primary"
+    local bg = self:Fill(b, "BACKGROUND", primary and T.primaryBg or T.btnBg)
+    bg:SetAllPoints()
+    local sheen = self:Fill(b, "BORDER", T.btnSheen)
+    sheen:SetPoint("TOPLEFT", 1, -1)
+    sheen:SetPoint("TOPRIGHT", -1, -1)
+    sheen:SetHeight(math.floor(height / 2))
+    b.border = self:Border(b, T.border, 0, "ARTWORK")
+    local hl = self:Fill(b, "HIGHLIGHT", T.btnHover)
+    hl:SetAllPoints()
+
+    local fs = self:Text(b, text, "GameFontNormalSmall", "CENTER")
+    fs:SetPoint("LEFT", 6, 0)
+    fs:SetPoint("RIGHT", -6, 0)
+    if primary then fs:SetTextColor(1, 0.95, 0.80) end
+    b.label = fs
+    if type(b.SetFontString) == "function" then b:SetFontString(fs) end
     b:SetText(text or "")
+    if type(b.SetPushedTextOffset) == "function" then b:SetPushedTextOffset(1, -1) end
+
+    -- Disabled buttons fade instead of keeping their gold.
+    b:HookScript("OnDisable", function()
+        fs:SetTextColor(0.5, 0.5, 0.5)
+        b.border:SetColor(0.30, 0.27, 0.22, 1)
+    end)
+    b:HookScript("OnEnable", function()
+        if primary then fs:SetTextColor(1, 0.95, 0.80) else fs:SetTextColor(T.gold[1], T.gold[2], T.gold[3]) end
+        b.border:SetColor(T.border)
+    end)
+
     if onClick then
         b:SetScript("OnClick", onClick)
     end
@@ -136,7 +297,7 @@ function Widgets:ProgressBar(parent, height, color)
     bar:SetMinMaxValues(0, 1)
     bar:SetValue(0)
 
-    local trough = self:Fill(bar, "BACKGROUND", 0.14, 0.14, 0.16, 0.95)
+    local trough = self:Fill(bar, "BACKGROUND", 0.11, 0.10, 0.09, 0.95)
     trough:SetAllPoints()
     bar.trough = trough
 
@@ -180,24 +341,43 @@ end
 Widgets.RestorePosition = restorePosition
 Widgets.SavePosition = savePosition
 
+--- Blizzard's close button, recoloured from red to the theme's gold.
+local function goldClose(parent)
+    local close = CreateFrame("Button", nil, parent, "UIPanelCloseButton")
+    close:SetSize(22, 22)
+    pcall(function()
+        for _, get in ipairs({ "GetNormalTexture", "GetPushedTexture" }) do
+            local tex = type(close[get]) == "function" and close[get](close)
+            if tex then
+                if tex.SetDesaturated then tex:SetDesaturated(true) end
+                tex:SetVertexColor(1, 0.82, 0.45)
+            end
+        end
+    end)
+    return close
+end
+Widgets.CloseButton = goldClose
+
 --- Create a movable window with the shared chrome.
--- opts: title, width, height, posKey (settings key for the saved position),
---       default = { point, x, y }, resizable = bool, minW/minH/maxW/maxH.
--- Returns the frame; frame.titleBar, frame.title, frame.closeButton exist.
+-- opts: title, subtitle, icon, width, height, posKey (settings key for the
+--       saved position), default = { point, x, y }, resizable = bool,
+--       minW/minH/maxW/maxH.
+-- Returns the frame; frame.titleBar, frame.title, frame.subtitle and
+-- frame.closeButton exist.
 --
 -- Only the title bar drags the window. A frame that drags anywhere begins a
 -- move on any click that never receives OnDragStop, which leaves the window
 -- stuck to the cursor.
 function Widgets:Window(name, opts)
     opts = opts or {}
-    local frame = CreateFrame("Frame", name, UIParent, backdropTemplate())
+    local frame = CreateFrame("Frame", name, UIParent)
     frame:SetSize(opts.width or 320, opts.height or 400)
     frame:SetFrameStrata("MEDIUM")
     frame:SetClampedToScreen(true)
     frame:EnableMouse(true)
     frame:SetMovable(true)
     frame:SetToplevel(true)
-    applyBackdrop(frame)
+    self:Chrome(frame)
     frame:Hide()
 
     restorePosition(frame, opts.posKey, opts.default or { "CENTER", 0, 0 })
@@ -213,9 +393,18 @@ function Widgets:Window(name, opts)
     bar:SetHeight(TITLE_HEIGHT)
     local barBg = self:Fill(bar, "BACKGROUND", T.titleBg)
     barBg:SetAllPoints()
-    local rule = self:Divider(bar)
+    local sheen = self:Fill(bar, "BORDER", T.titleSheen)
+    sheen:SetPoint("TOPLEFT", 0, 0)
+    sheen:SetPoint("TOPRIGHT", 0, 0)
+    sheen:SetHeight(math.floor(TITLE_HEIGHT / 2))
+    local rule = self:Fill(bar, "ARTWORK", T.border)
+    rule:SetHeight(1)
     rule:SetPoint("BOTTOMLEFT", 0, 0)
     rule:SetPoint("BOTTOMRIGHT", 0, 0)
+    local underRule = self:Fill(frame, "ARTWORK", T.shadow)
+    underRule:SetHeight(2)
+    underRule:SetPoint("TOPLEFT", bar, "BOTTOMLEFT", 0, 0)
+    underRule:SetPoint("TOPRIGHT", bar, "BOTTOMRIGHT", 0, 0)
 
     bar:EnableMouse(true)
     bar:RegisterForDrag("LeftButton")
@@ -233,24 +422,31 @@ function Widgets:Window(name, opts)
 
     local icon
     if opts.icon then
-        icon = bar:CreateTexture(nil, "ARTWORK")
+        local ring = self:Fill(bar, "ARTWORK", T.border)
+        ring:SetSize(18, 18)
+        ring:SetPoint("LEFT", 8, 0)
+        icon = bar:CreateTexture(nil, "OVERLAY")
         icon:SetSize(16, 16)
-        icon:SetPoint("LEFT", 8, 0)
+        icon:SetPoint("CENTER", ring, "CENTER", 0, 0)
         icon:SetTexture(opts.icon)
         icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
+        icon = ring
     end
 
     local title = self:Line(bar, opts.title or "", "GameFontNormal")
-    title:SetPoint("LEFT", icon or bar, icon and "RIGHT" or "LEFT", icon and 6 or 10, 0)
-    title:SetPoint("RIGHT", bar, "RIGHT", -60, 0)
+    title:SetPoint("LEFT", icon or bar, icon and "RIGHT" or "LEFT", icon and 7 or 12, 0)
     title:SetTextColor(ns.Colors.accent.r, ns.Colors.accent.g, ns.Colors.accent.b)
     frame.title = title
 
-    local close = CreateFrame("Button", nil, bar, "UIPanelCloseButton")
-    close:SetSize(24, 24)
-    close:SetPoint("RIGHT", -2, 0)
+    local close = goldClose(bar)
+    close:SetPoint("RIGHT", -3, 0)
     close:SetScript("OnClick", function() frame:Hide() end)
     frame.closeButton = close
+
+    local subtitle = self:Line(bar, opts.subtitle or "", "GameFontDisableSmall", "RIGHT")
+    subtitle:SetPoint("RIGHT", close, "LEFT", -6, 0)
+    frame.subtitle = subtitle
+    title:SetPoint("RIGHT", subtitle, "LEFT", -8, 0)
 
     if opts.resizable and type(frame.SetResizable) == "function" then
         frame:SetResizable(true)
@@ -277,18 +473,19 @@ function Widgets:Window(name, opts)
     return frame
 end
 
---- Small square icon button (e.g. the options cog in a title bar).
+--- Small square icon button (e.g. the options cog in a title bar). Dimmed
+-- at rest, full brightness under the cursor.
 function Widgets:IconButton(parent, texture, size, tooltipTitle, tooltipLines, onClick)
     local b = CreateFrame("Button", nil, parent)
     b:SetSize(size or 18, size or 18)
     local tex = b:CreateTexture(nil, "ARTWORK")
     tex:SetAllPoints()
     tex:SetTexture(texture)
-    tex:SetVertexColor(0.85, 0.85, 0.85)
+    tex:SetVertexColor(0.80, 0.74, 0.62)
     b.icon = tex
     local hl = b:CreateTexture(nil, "HIGHLIGHT")
     hl:SetAllPoints()
-    hl:SetColorTexture(1, 1, 1, 0.15)
+    hl:SetColorTexture(1, 0.85, 0.45, 0.15)
     b:SetScript("OnClick", onClick)
     if tooltipTitle then self:TooltipLines(b, tooltipTitle, tooltipLines) end
     return b
@@ -297,31 +494,73 @@ end
 ---------------------------------------------------------------------------
 -- Form controls
 ---------------------------------------------------------------------------
---- Horizontal slider with a label on the left and a live value on the right.
--- Returns the holder frame (height 44); holder.slider and holder.Refresh().
-function Widgets:Slider(parent, label, minVal, maxVal, step, get, set, formatFn, tip)
+-- Rows used by the options window: a label (and optional wrapped
+-- description, opts.desc, at opts.width) on the left, the control on the
+-- right or underneath. Each returns a holder frame with .Refresh() and a
+-- .rowHeight the caller lays out by.
+
+local ROW_PAD = 7
+
+--- Horizontal slider with its value in a small badge on the right.
+-- Returns the holder frame; holder.slider and holder.Refresh().
+function Widgets:Slider(parent, label, minVal, maxVal, step, get, set, formatFn, tip, opts)
+    opts = opts or {}
     local holder = CreateFrame("Frame", nil, parent)
-    holder:SetHeight(44)
+    local width = opts.width or 300
 
-    local lbl = self:Line(holder, label, "GameFontHighlightSmall")
-    lbl:SetPoint("TOPLEFT", 2, 0)
-    lbl:SetPoint("TOPRIGHT", -80, 0)
+    local lbl = self:Line(holder, label, "GameFontHighlight")
+    lbl:SetPoint("TOPLEFT", 10, -ROW_PAD)
+    lbl:SetPoint("TOPRIGHT", -80, -ROW_PAD)
 
-    local val = self:Line(holder, "", "GameFontNormalSmall", "RIGHT")
-    val:SetPoint("TOPRIGHT", -2, 0)
-    val:SetWidth(78)
+    local badge = CreateFrame("Frame", nil, holder)
+    badge:SetSize(64, 18)
+    badge:SetPoint("TOPRIGHT", -10, -ROW_PAD + 2)
+    local badgeBg = self:Fill(badge, "BACKGROUND", 0, 0, 0, 0.45)
+    badgeBg:SetAllPoints()
+    self:Border(badge, T.cardEdge, 0, "BORDER")
+    local val = self:Line(badge, "", "GameFontNormalSmall", "CENTER")
+    val:SetPoint("LEFT", 2, 0)
+    val:SetPoint("RIGHT", -2, 0)
 
-    local slider = CreateFrame("Slider", nil, holder, "OptionsSliderTemplate")
-    slider:SetPoint("TOPLEFT", 6, -16)
-    slider:SetPoint("TOPRIGHT", -6, -16)
+    local y = ROW_PAD + 16
+    if opts.desc then
+        local note, h = self:Note(holder, opts.desc, width - 20)
+        note:SetPoint("TOPLEFT", 10, -(y + 2))
+        y = y + 2 + h
+    end
+
+    local slider = CreateFrame("Slider", nil, holder)
+    if type(slider.SetOrientation) == "function" then slider:SetOrientation("HORIZONTAL") end
+    slider:SetPoint("TOPLEFT", 10, -(y + 6))
+    slider:SetPoint("TOPRIGHT", -10, -(y + 6))
     slider:SetHeight(16)
+    slider:EnableMouse(true)
+    slider:SetHitRectInsets(-4, -4, -6, -6)
     slider:SetMinMaxValues(minVal, maxVal)
     slider:SetValueStep(step or 1)
     slider:SetObeyStepOnDrag(true)
-    if slider.low then slider.low:SetText("") end
-    if slider.high then slider.high:SetText("") end
-    if slider.Text then slider.Text:SetText("") end
-    if slider.text then slider.text:SetText("") end
+
+    local track = self:Fill(slider, "BACKGROUND", T.track)
+    track:SetHeight(4)
+    track:SetPoint("LEFT", 0, 0)
+    track:SetPoint("RIGHT", 0, 0)
+    local trackEdge = self:Fill(slider, "BORDER", 0, 0, 0, 0.6)
+    trackEdge:SetHeight(1)
+    trackEdge:SetPoint("TOPLEFT", track, "TOPLEFT", 0, 0)
+    trackEdge:SetPoint("TOPRIGHT", track, "TOPRIGHT", 0, 0)
+
+    local thumb = slider:CreateTexture(nil, "OVERLAY")
+    thumb:SetColorTexture(T.gold[1], T.gold[2], T.gold[3], 1)
+    thumb:SetSize(8, 16)
+    slider:SetThumbTexture(thumb)
+    local grip = self:Fill(slider, "OVERLAY", 0.30, 0.20, 0.05, 0.9)
+    grip:SetSize(2, 8)
+    grip:SetPoint("CENTER", thumb, "CENTER", 0, 0)
+
+    local filled = self:Fill(slider, "ARTWORK", T.goldDeep)
+    filled:SetHeight(4)
+    filled:SetPoint("LEFT", track, "LEFT", 0, 0)
+    filled:SetPoint("RIGHT", thumb, "CENTER", 0, 0)
 
     local function show(v)
         val:SetText(formatFn and formatFn(v) or tostring(v))
@@ -335,6 +574,15 @@ function Widgets:Slider(parent, label, minVal, maxVal, step, get, set, formatFn,
         if not updating then set(v) end
     end)
 
+    -- The mouse wheel nudges one step at a time.
+    if type(slider.EnableMouseWheel) == "function" then
+        slider:EnableMouseWheel(true)
+        slider:SetScript("OnMouseWheel", function(self, delta)
+            local v = (self:GetValue() or minVal) + delta * (step or 1)
+            self:SetValue(math.max(minVal, math.min(maxVal, v)))
+        end)
+    end
+
     function holder.Refresh()
         updating = true
         slider:SetValue(get() or minVal)
@@ -345,32 +593,101 @@ function Widgets:Slider(parent, label, minVal, maxVal, step, get, set, formatFn,
 
     if tip then self:TooltipLines(slider, label, { tip }) end
     holder.slider = slider
+    holder.rowHeight = y + 6 + 16 + ROW_PAD
+    holder:SetHeight(holder.rowHeight)
     return holder
 end
 
---- A checkbox row with an optional tooltip. Returns the holder frame;
--- holder.check and holder.Refresh().
-function Widgets:Check(parent, label, get, set, tip)
-    local holder = CreateFrame("Frame", nil, parent)
-    holder:SetHeight(26)
+--- An on/off switch row: a pill that slides gold when on. Clicking anywhere
+-- on the row flips it. Returns the holder; holder.check and holder.Refresh().
+function Widgets:Check(parent, label, get, set, tip, opts)
+    opts = opts or {}
+    local width = opts.width or 300
+    local holder = CreateFrame("Button", nil, parent)
+    holder:RegisterForClicks("LeftButtonUp")
+    local hover = self:Fill(holder, "HIGHLIGHT", T.rowHover)
+    hover:SetAllPoints()
 
-    local chk = CreateFrame("CheckButton", nil, holder, "InterfaceOptionsCheckButtonTemplate")
-    chk:SetSize(24, 24)
-    chk:SetPoint("LEFT", -2, 0)
-    chk:SetChecked(get() and true or false)
-    if chk.Text then chk.Text:SetText("") end
+    local chk = CreateFrame("CheckButton", nil, holder)
+    chk:SetSize(30, 16)
+    chk:SetPoint("TOPRIGHT", -10, -ROW_PAD)
+    local trackBg = self:Fill(chk, "BACKGROUND", T.trackOff)
+    trackBg:SetAllPoints()
+    local trackEdge = self:Border(chk, { 0, 0, 0, 0.6 }, 0, "BORDER")
+    local knob = self:Fill(chk, "ARTWORK", T.knobOff)
+    knob:SetSize(12, 12)
 
-    local lbl = self:Line(holder, label, "GameFontHighlightSmall")
-    lbl:SetPoint("LEFT", chk, "RIGHT", 4, 0)
-    lbl:SetPoint("RIGHT", holder, "RIGHT", 0, 0)
+    local lbl = self:Line(holder, label, "GameFontHighlight")
+    lbl:SetPoint("TOPLEFT", 10, -ROW_PAD)
+    lbl:SetPoint("RIGHT", chk, "LEFT", -10, 0)
+
+    local h = ROW_PAD + 16
+    if opts.desc then
+        local note, nh = self:Note(holder, opts.desc, width - 70)
+        note:SetPoint("TOPLEFT", 10, -(h + 2))
+        h = h + 2 + nh
+    end
+
+    local function paint(on)
+        knob:ClearAllPoints()
+        if on then
+            trackBg:SetColorTexture(T.goldDeep[1], T.goldDeep[2], T.goldDeep[3], 1)
+            knob:SetColorTexture(T.gold[1], T.gold[2], T.gold[3], 1)
+            knob:SetPoint("RIGHT", chk, "RIGHT", -2, 0)
+            trackEdge:SetColor(T.border)
+        else
+            trackBg:SetColorTexture(T.trackOff[1], T.trackOff[2], T.trackOff[3], 1)
+            knob:SetColorTexture(T.knobOff[1], T.knobOff[2], T.knobOff[3], 1)
+            knob:SetPoint("LEFT", chk, "LEFT", 2, 0)
+            trackEdge:SetColor(0, 0, 0, 0.6)
+        end
+    end
 
     chk:SetScript("OnClick", function(self)
-        set(self:GetChecked() and true or false)
+        local on = self:GetChecked() and true or false
+        paint(on)
+        set(on)
+    end)
+    -- The whole row is the hit area, not just the little switch.
+    holder:SetScript("OnClick", function()
+        chk:SetChecked(not chk:GetChecked())
+        chk:GetScript("OnClick")(chk)
     end)
 
-    function holder.Refresh() chk:SetChecked(get() and true or false) end
-    if tip then self:TooltipLines(chk, label, { tip }) end
+    function holder.Refresh()
+        local on = get() and true or false
+        chk:SetChecked(on)
+        paint(on)
+    end
+    holder.Refresh()
+
+    if tip then self:TooltipLines(holder, label, { tip }) end
     holder.check = chk
+    holder.rowHeight = h + ROW_PAD
+    holder:SetHeight(holder.rowHeight)
+    return holder
+end
+
+--- A row with a label, description and a button on the right.
+function Widgets:ActionRow(parent, label, desc, buttonText, onClick, opts)
+    opts = opts or {}
+    local width = opts.width or 300
+    local holder = CreateFrame("Frame", nil, parent)
+    local btn = self:Button(holder, buttonText, opts.buttonWidth or 110, 22, onClick)
+    btn:SetPoint("TOPRIGHT", -10, -ROW_PAD + 2)
+    local lbl = self:Line(holder, label, "GameFontHighlight")
+    lbl:SetPoint("TOPLEFT", 10, -ROW_PAD)
+    lbl:SetPoint("RIGHT", btn, "LEFT", -10, 0)
+    local h = ROW_PAD + 16
+    if desc then
+        local note, nh = self:Note(holder, desc, width - (opts.buttonWidth or 110) - 30)
+        note:SetPoint("TOPLEFT", 10, -(h + 2))
+        h = h + 2 + nh
+    end
+    holder.button = btn
+    holder.rowHeight = math.max(h, 26) + ROW_PAD
+    holder:SetHeight(holder.rowHeight)
+    function holder.Refresh() end
     return holder
 end
 
@@ -396,13 +713,30 @@ function Widgets:Scroll(parent)
     syncWidth()
 
     -- The template's scrollbar sits outside the frame's right edge; keep it
-    -- inside the window by shifting it in.
+    -- inside the window by shifting it in, and slim it to a gold rail: a
+    -- thin trough, a gold thumb, and the arrow buttons faded right back.
     local bar = scroll.ScrollBar
     if bar and bar.ClearAllPoints then
         pcall(function()
             bar:ClearAllPoints()
             bar:SetPoint("TOPRIGHT", scroll, "TOPRIGHT", 18, -16)
             bar:SetPoint("BOTTOMRIGHT", scroll, "BOTTOMRIGHT", 18, 16)
+        end)
+        pcall(function()
+            local rail = Widgets:Fill(bar, "BACKGROUND", 0, 0, 0, 0.35)
+            rail:SetWidth(4)
+            rail:SetPoint("TOP", 0, 0)
+            rail:SetPoint("BOTTOM", 0, 0)
+            local thumb = type(bar.GetThumbTexture) == "function" and bar:GetThumbTexture()
+            if thumb then
+                thumb:SetTexture(WHITE)
+                thumb:SetVertexColor(T.goldDeep[1], T.goldDeep[2], T.goldDeep[3], 0.9)
+                thumb:SetSize(4, 24)
+            end
+            for _, key in ipairs({ "ScrollUpButton", "ScrollDownButton" }) do
+                local arrow = bar[key] or (bar.GetName and bar:GetName() and _G[bar:GetName() .. key])
+                if arrow and arrow.SetAlpha then arrow:SetAlpha(0.35) end
+            end
         end)
     end
 
@@ -421,12 +755,13 @@ function Widgets.ResizeGrip(frame, onDone)
 
     local grip = CreateFrame("Button", nil, frame)
     grip:SetSize(16, 16)
-    grip:SetPoint("BOTTOMRIGHT", -2, 2)
+    grip:SetPoint("BOTTOMRIGHT", -3, 3)
     grip:SetFrameLevel((frame:GetFrameLevel() or 1) + 10)
 
     local tex = grip:CreateTexture(nil, "OVERLAY")
     tex:SetAllPoints()
     tex:SetTexture("Interface\\ChatFrame\\UI-ChatIM-SizeGrabber-Up")
+    tex:SetVertexColor(1, 0.85, 0.5)
     grip.tex = tex
 
     grip:EnableMouse(true)

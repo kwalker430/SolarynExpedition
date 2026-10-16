@@ -50,11 +50,12 @@ The top of the panel always shows your current zone, its level range and how muc
 - **Numbered map pins:** route stops show on the world map. Hover a pin for details or click it to set a waypoint.
 
 ### On-screen route tracker
-A compact tracker, in the style of the built-in quest tracker, appears while you're being guided:
-- The current stop, its remaining objectives and a live distance.
-- A **direction arrow** relative to the way you're facing.
-- The next few stops; click one to jump ahead.
-- Header buttons: **rebuild** the route now, **skip** a stop, **S** to shelve its quest (and **R** to restore shelved quests), **stop** guiding, and collapse.
+A compact tracker, framed like the edge of a map, appears while you're being guided:
+- The current stop as a card: its remaining objectives, a live distance, and a gold **direction arrow** relative to the way you're facing.
+- A thin gold strip under the header showing how far along the route you are.
+- **Up next:** the following stops; click one to jump ahead.
+- Header buttons: **rebuild** the route now, **shelve** the current quest (the bag; the back arrow restores shelved quests), **skip** a stop, **stop** guiding, and collapse.
+- Its size and background opacity are adjustable in the options.
 - **Quest item buttons** for usable quest items in your bags. Bind **"Use quest item (guided quest)"** under *Key Bindings → AddOns*.
 
 ### Quest info in tooltips
@@ -129,12 +130,13 @@ A compact tracker, in the style of the built-in quest tracker, appears while you
 
 ## Options
 
-Open with `/sol options`, the cog on the panel, or right-click the minimap button.
-- **Display:** minimap button, panel lock, route pins on the map.
-- **Route:** keep the route up to date automatically, auto-build on open, finish nearby objectives before handing in, prefer quests at your level, include dungeon and raid quests, wait until the quest work is done (or move on when you arrive), arrival distance, quests per route.
-- **Route tracker:** show while guiding (or always), lock, size, number of upcoming stops, quest item buttons, tooltip quest info.
-- **Exploration tracking:** sampling interval and grid detail.
+Open with `/sol options`, the cog on the panel, or right-click the minimap button. Pick a category on the left; every option explains itself underneath its name, and changes apply straight away.
+- **General:** minimap button, panel lock, login message, route pins on the map, quest info in tooltips.
+- **Route:** keep the route up to date automatically, auto-build on open, finish nearby objectives before handing in, prefer quests at your level, include dungeon and raid quests, quests per route; and how the guide follows it: move on automatically, wait until the quest work is done (or move on when you arrive), arrival distance, search area.
+- **Tracker:** show while guiding (or always), lock, number of upcoming stops, size, background opacity, quest item buttons.
+- **Exploration:** sampling interval and grid detail.
 - **Suggestions:** rank by distance, or by your own weights (distance, level, same zone, hand-ins, story and task quests).
+- **Maintenance:** rebuild the route, reset options, reset zone data, clear recorded positions.
 
 ---
 

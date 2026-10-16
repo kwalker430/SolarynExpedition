@@ -4,12 +4,14 @@
     A compact, always-on-screen view of the guide, in the spirit of the
     client's objective tracker:
 
-      ROUTE  3/8                       [>>] [x] [-]
-      (arrow) Kobold Camp Cleanup
-              Elwynn Forest  ·  220 yd
-              - Kobold Vermin: 4/8
-      4. A Threat Within  ·  Hand in       410 yd
-      5. Westfall Plots                    1.2 mi
+      [map] ROUTE 3/8                [rebuild][shelve][>>][x][-]
+      ====-------------------------------  (progress strip)
+      | (arrow) Kobold Camp Cleanup                    220 yd |
+      |         Elwynn Forest                                 |
+      |         * Kobold Vermin: 4/8                          |
+      UP NEXT ------------------------------------------------
+      * 4. A Threat Within  ·  Hand in                 410 yd
+      * 5. Westfall Plots                              1.2 mi
 
     The header drags it (unless locked) and opens the panel on click. The
     arrow points at the current stop relative to the way you're facing. It
@@ -28,10 +30,17 @@ ns.HUD = {}
 local HUD = ns.HUD
 local Widgets = ns.Widgets
 
-local WIDTH = 250
+local Theme = Widgets.Theme
+
+local WIDTH = 268
+local HEADER_H = 24          -- header bar
+local STRIP_H = 2            -- progress strip under it
+local OBJ_LINE_H = 14
+local ROW_H = 18
 local MAX_OBJECTIVE_LINES = 4
 local MAX_UPCOMING = 6
 local TICK = 0.2
+HUD.HEADER_H = HEADER_H + STRIP_H   -- height when collapsed
 
 -- Key Bindings > AddOns: "Use quest item" clicks the first item button.
 _G.BINDING_HEADER_SOLARYNEXPEDITION = "Solaryn's Expedition"
@@ -44,9 +53,9 @@ local itemsPending = false     -- an update waiting for combat to end
 local frame, header, body
 local titleText, countText, skipButton, stopButton, collapseButton, rebuildButton
 local shelveButton, restoreButton
-local arrow, stopTitle, stopWhere, objectiveLines = nil, nil, nil, {}
+local arrow, stopTitle, stopWhere, distText, objectiveLines = nil, nil, nil, nil, {}
 local upcomingRows = {}
-local currentBlock, startButton
+local currentBlock, startButton, accentBar, upNext, progress, bodyBg, headerBg
 local built = false
 
 local function S() return ns.Settings() end
@@ -84,15 +93,32 @@ end
 ---------------------------------------------------------------------------
 -- Construction
 ---------------------------------------------------------------------------
-local function smallButton(parent, label, tip, onClick)
+local ICONS = {
+    collapse = "Interface\\Buttons\\UI-MinusButton-Up",
+    expand   = "Interface\\Buttons\\UI-PlusButton-Up",
+    stop     = "Interface\\Buttons\\UI-GroupLoot-Pass-Up",
+    skip     = "Interface\\Buttons\\UI-SpellbookIcon-NextPage-Up",
+    shelve   = "Interface\\Icons\\INV_Misc_Bag_08",
+    restore  = "Interface\\Buttons\\UI-SpellbookIcon-PrevPage-Up",
+    rebuild  = "Interface\\Buttons\\UI-RefreshButton",
+    map      = "Interface\\Icons\\INV_Misc_Map_01",
+    disc     = "Interface\\CHARACTERFRAME\\TempPortraitAlphaMask",
+}
+
+--- A 16px header button showing a stock icon, dimmed until hovered.
+local function smallButton(parent, texture, tip, onClick, crop)
     local b = CreateFrame("Button", nil, parent)
-    b:SetSize(18, 16)
-    local t = Widgets:Text(b, label, "GameFontNormalSmall", "CENTER")
-    t:SetPoint("CENTER", 0, 0)
-    b.text = t
+    b:SetSize(16, 16)
+    local icon = b:CreateTexture(nil, "ARTWORK")
+    icon:SetSize(crop and 12 or 15, crop and 12 or 15)
+    icon:SetPoint("CENTER")
+    icon:SetTexture(texture)
+    if crop then icon:SetTexCoord(0.1, 0.9, 0.1, 0.9) end
+    icon:SetVertexColor(0.85, 0.78, 0.62)
+    b.icon = icon
     local hl = b:CreateTexture(nil, "HIGHLIGHT")
     hl:SetAllPoints()
-    hl:SetColorTexture(1, 1, 1, 0.15)
+    hl:SetColorTexture(1, 0.85, 0.45, 0.18)
     b:SetScript("OnClick", onClick)
     Widgets:TooltipLines(b, tip, {})
     return b
@@ -100,19 +126,24 @@ end
 
 local function buildUpcomingRow(i)
     local row = CreateFrame("Button", nil, body)
-    row:SetHeight(16)
+    row:SetHeight(ROW_H)
     row:RegisterForClicks("LeftButtonUp")
-    local hl = row:CreateTexture(nil, "HIGHLIGHT")
+    row.alt = Widgets:Fill(row, "BACKGROUND", Theme.rowAlt)
+    row.alt:SetAllPoints()
+    local hl = Widgets:Fill(row, "HIGHLIGHT", Theme.rowHover)
     hl:SetAllPoints()
-    hl:SetColorTexture(1, 1, 1, 0.06)
+
+    row.dot = Widgets:Fill(row, "ARTWORK", 1, 1, 1, 1)
+    row.dot:SetSize(5, 5)
+    row.dot:SetPoint("LEFT", 12, 0)
 
     row.dist = Widgets:Line(row, "", "GameFontHighlightSmall", "RIGHT")
-    row.dist:SetPoint("RIGHT", -4, 0)
+    row.dist:SetPoint("RIGHT", -8, 0)
     row.dist:SetWidth(56)
     dimColor(row.dist)
 
     row.text = Widgets:Line(row, "", "GameFontHighlightSmall")
-    row.text:SetPoint("LEFT", 6, 0)
+    row.text:SetPoint("LEFT", 24, 0)
     row.text:SetPoint("RIGHT", row.dist, "LEFT", -4, 0)
 
     row:SetScript("OnClick", function(self)
@@ -139,6 +170,21 @@ local function buildUpcomingRow(i)
     return row
 end
 
+local function buildObjectiveLine(i)
+    local fs = Widgets:Line(currentBlock, "", "GameFontHighlightSmall")
+    fs:SetPoint("TOPLEFT", stopWhere, "BOTTOMLEFT", 9, -4 - (i - 1) * OBJ_LINE_H)
+    fs:SetPoint("TOPRIGHT", currentBlock, "TOPRIGHT", -8, -4 - (i - 1) * OBJ_LINE_H)
+    fs:Hide()
+    -- (anchored to the where-line, which never moves)
+    local bullet = Widgets:Fill(currentBlock, "ARTWORK", 1, 1, 1, 1)
+    bullet:SetSize(4, 4)
+    bullet:SetPoint("RIGHT", fs, "LEFT", -5, 0)
+    bullet:Hide()
+    fs.bullet = bullet
+    objectiveLines[i] = fs
+    return fs
+end
+
 local function build()
     frame = CreateFrame("Frame", "SolarynExpeditionHUD", UIParent)
     frame:SetSize(WIDTH, 60)
@@ -148,14 +194,14 @@ local function build()
     frame:Hide()
     Widgets.RestorePosition(frame, "hudPoint", { "RIGHT", -60, 120 })
 
-    local bg = Widgets:Fill(frame, "BACKGROUND", 0, 0, 0, 0.35)
-    bg:SetAllPoints()
+    local hb = Theme.hudBg
+    bodyBg = Widgets:Chrome(frame, { bg = { hb[1], hb[2], hb[3], 0.75 }, hairline = false, bracketSize = 7 })
 
     -- Header: drag handle, click to open the panel.
     header = CreateFrame("Button", nil, frame)
-    header:SetPoint("TOPLEFT", 0, 0)
-    header:SetPoint("TOPRIGHT", 0, 0)
-    header:SetHeight(20)
+    header:SetPoint("TOPLEFT", 1, -1)
+    header:SetPoint("TOPRIGHT", -1, -1)
+    header:SetHeight(HEADER_H - 1)
     header:RegisterForDrag("LeftButton")
     header:RegisterForClicks("LeftButtonUp")
     header:SetScript("OnDragStart", function()
@@ -171,32 +217,40 @@ local function build()
         "Click: open the Route tab",
         "Drag: move (lock it in options)",
     })
+    headerBg = Widgets:Fill(header, "BACKGROUND", Theme.titleBg)
+    headerBg:SetAllPoints()
+    local sheen = Widgets:Fill(header, "BORDER", Theme.titleSheen)
+    sheen:SetPoint("TOPLEFT", 0, 0)
+    sheen:SetPoint("TOPRIGHT", 0, 0)
+    sheen:SetHeight(math.floor(HEADER_H / 2))
 
-    local rule = Widgets:Divider(header)
-    rule:SetPoint("BOTTOMLEFT", 0, 0)
-    rule:SetPoint("BOTTOMRIGHT", 0, 0)
+    local mapIcon = header:CreateTexture(nil, "ARTWORK")
+    mapIcon:SetSize(14, 14)
+    mapIcon:SetPoint("LEFT", 6, 0)
+    mapIcon:SetTexture(ICONS.map)
+    mapIcon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
 
-    collapseButton = smallButton(header, "-", "Collapse / expand", function()
+    collapseButton = smallButton(header, ICONS.collapse, "Collapse / expand", function()
         S().hudCollapsed = not S().hudCollapsed
         HUD:Refresh()
     end)
-    collapseButton:SetPoint("RIGHT", -2, 0)
-    stopButton = smallButton(header, "x", "Stop guiding", function() ns.Route:StopGuiding() end)
-    stopButton:SetPoint("RIGHT", collapseButton, "LEFT", -2, 0)
-    skipButton = smallButton(header, ">>", "Skip this stop", function() ns.Route:Advance("skipped") end)
-    skipButton:SetPoint("RIGHT", stopButton, "LEFT", -2, 0)
+    collapseButton:SetPoint("RIGHT", -4, 0)
+    stopButton = smallButton(header, ICONS.stop, "Stop guiding", function() ns.Route:StopGuiding() end)
+    stopButton:SetPoint("RIGHT", collapseButton, "LEFT", -1, 0)
+    skipButton = smallButton(header, ICONS.skip, "Skip this stop", function() ns.Route:Advance("skipped") end)
+    skipButton:SetPoint("RIGHT", stopButton, "LEFT", -1, 0)
 
     -- Shelve the current stop's quest (kept off the route until restored).
-    shelveButton = smallButton(header, "S", "Shelve this quest", function()
+    shelveButton = smallButton(header, ICONS.shelve, "Shelve this quest", function()
         local st = ns.Route:Next()
         if st and st.questID then ns.Route:Shelve(st.questID) end
-    end)
+    end, true)
     Widgets:TooltipLines(shelveButton, "Shelve this quest",
         { "Leave it off the route until you restore it.", "Remembered across reloads." })
-    shelveButton:SetPoint("RIGHT", skipButton, "LEFT", -2, 0)
+    shelveButton:SetPoint("RIGHT", skipButton, "LEFT", -1, 0)
 
     -- Only shown while something is shelved: puts everything back.
-    restoreButton = smallButton(header, "R", "Restore shelved quests", function()
+    restoreButton = smallButton(header, ICONS.restore, "Restore shelved quests", function()
         ns.Route:UnshelveAll()
     end)
     restoreButton:SetScript("OnEnter", function(self)
@@ -206,68 +260,89 @@ local function build()
         table.insert(lines, "Click: put them all back on the route")
         Widgets:ShowTooltip(self, "Shelved quests", lines)
     end)
-    restoreButton:SetPoint("RIGHT", shelveButton, "LEFT", -2, 0)
+    restoreButton:SetPoint("RIGHT", shelveButton, "LEFT", -1, 0)
 
     -- Rebuild on demand (the route also rebuilds itself on quest changes).
-    rebuildButton = smallButton(header, "", "Rebuild route", function() HUD:RebuildRoute() end)
-    rebuildButton.text:SetText("")
-    local refresh = rebuildButton:CreateTexture(nil, "ARTWORK")
-    refresh:SetSize(14, 14)
-    refresh:SetPoint("CENTER")
-    refresh:SetTexture("Interface\\Buttons\\UI-RefreshButton")
-    rebuildButton.icon = refresh
+    rebuildButton = smallButton(header, ICONS.rebuild, "Rebuild route", function() HUD:RebuildRoute() end)
     Widgets:TooltipLines(rebuildButton, "Rebuild route",
         { "Re-plan the remaining stops from where you are.", "Stops you've finished stay done." })
-    rebuildButton:SetPoint("RIGHT", restoreButton, "LEFT", -2, 0)
+    rebuildButton:SetPoint("RIGHT", restoreButton, "LEFT", -1, 0)
 
     titleText = Widgets:Line(header, "ROUTE", "GameFontNormalSmall")
-    titleText:SetPoint("LEFT", 6, 0)
+    titleText:SetPoint("LEFT", mapIcon, "RIGHT", 5, 0)
     countText = Widgets:Line(header, "", "GameFontHighlightSmall")
     countText:SetPoint("LEFT", titleText, "RIGHT", 6, 0)
+    dimColor(countText)
+
+    -- How far along the route you are: a thin gold strip under the header.
+    progress = Widgets:ProgressBar(frame, STRIP_H, ns.Colors.accent)
+    progress:SetPoint("TOPLEFT", 1, -HEADER_H)
+    progress:SetPoint("TOPRIGHT", -1, -HEADER_H)
 
     body = CreateFrame("Frame", nil, frame)
-    body:SetPoint("TOPLEFT", 0, -20)
-    body:SetPoint("TOPRIGHT", 0, -20)
+    body:SetPoint("TOPLEFT", 0, -(HEADER_H + STRIP_H))
+    body:SetPoint("TOPRIGHT", 0, -(HEADER_H + STRIP_H))
     body:SetHeight(40)
 
-    -- Current stop: click to re-point the waypoint at it.
+    -- Current stop: a card with the arrow on a dark disc, the distance on
+    -- the right and the objectives underneath. Click to re-point the waypoint.
     currentBlock = CreateFrame("Button", nil, body)
-    currentBlock:SetPoint("TOPLEFT", 0, -4)
-    currentBlock:SetPoint("TOPRIGHT", 0, -4)
+    currentBlock:SetPoint("TOPLEFT", 6, -6)
+    currentBlock:SetPoint("TOPRIGHT", -6, -6)
     currentBlock:RegisterForClicks("LeftButtonUp")
     currentBlock:SetScript("OnClick", function()
         local st = ns.Route:Next()
         if st then ns.Route:SetWaypointTo(st) end
     end)
     Widgets:TooltipLines(currentBlock, "Current stop", { "Click: set the waypoint here again" })
+    local cardBg = Widgets:Fill(currentBlock, "BACKGROUND", 1, 0.9, 0.7, 0.04)
+    cardBg:SetAllPoints()
+    Widgets:Border(currentBlock, Theme.cardEdge, 0, "BORDER")
+    accentBar = Widgets:Fill(currentBlock, "ARTWORK", 1, 1, 1, 1)
+    accentBar:SetWidth(2)
+    accentBar:SetPoint("TOPLEFT", 0, 0)
+    accentBar:SetPoint("BOTTOMLEFT", 0, 0)
+    local chl = Widgets:Fill(currentBlock, "HIGHLIGHT", Theme.rowHover)
+    chl:SetAllPoints()
 
-    arrow = currentBlock:CreateTexture(nil, "ARTWORK")
-    arrow:SetSize(24, 24)
-    arrow:SetPoint("TOPLEFT", 4, -2)
+    local disc = currentBlock:CreateTexture(nil, "ARTWORK")
+    disc:SetSize(32, 32)
+    disc:SetPoint("TOPLEFT", 8, -6)
+    disc:SetTexture(ICONS.disc)
+    disc:SetVertexColor(0, 0, 0, 0.6)
+    arrow = currentBlock:CreateTexture(nil, "OVERLAY")
+    arrow:SetSize(26, 26)
+    arrow:SetPoint("CENTER", disc, "CENTER", 0, 0)
     arrow:SetTexture("Interface\\Minimap\\MinimapArrow")
 
+    distText = Widgets:Line(currentBlock, "", "GameFontHighlight", "RIGHT")
+    distText:SetPoint("TOPRIGHT", -8, -7)
+    distText:SetWidth(72)
+
     stopTitle = Widgets:Line(currentBlock, "", "GameFontNormal")
-    stopTitle:SetPoint("TOPLEFT", 32, 0)
-    stopTitle:SetPoint("TOPRIGHT", -4, 0)
+    stopTitle:SetPoint("TOPLEFT", 48, -7)
+    stopTitle:SetPoint("RIGHT", distText, "LEFT", -4, 0)
 
     stopWhere = Widgets:Line(currentBlock, "", "GameFontHighlightSmall")
     stopWhere:SetPoint("TOPLEFT", stopTitle, "BOTTOMLEFT", 0, -2)
-    stopWhere:SetPoint("TOPRIGHT", stopTitle, "BOTTOMRIGHT", 0, -2)
+    stopWhere:SetPoint("TOPRIGHT", currentBlock, "TOPRIGHT", -8, -23)
     dimColor(stopWhere)
 
-    for i = 1, MAX_OBJECTIVE_LINES do
-        local fs = Widgets:Line(currentBlock, "", "GameFontHighlightSmall")
-        fs:SetPoint("TOPLEFT", stopWhere, "BOTTOMLEFT", 0, -2 - (i - 1) * 13)
-        fs:SetPoint("TOPRIGHT", stopWhere, "BOTTOMRIGHT", 0, -2 - (i - 1) * 13)
-        fs:Hide()
-        objectiveLines[i] = fs
-    end
+    for i = 1, MAX_OBJECTIVE_LINES do buildObjectiveLine(i) end
+
+    -- "Up next" heading over the upcoming stops.
+    upNext = Widgets:Line(body, "UP NEXT", "GameFontDisableSmall")
+    local upRule = Widgets:Fill(body, "ARTWORK", Theme.divider)
+    upRule:SetHeight(1)
+    upRule:SetPoint("LEFT", upNext, "RIGHT", 6, 0)
+    upRule:SetPoint("RIGHT", body, "RIGHT", -8, 0)
+    upNext.rule = upRule
 
     for i = 1, MAX_UPCOMING do buildUpcomingRow(i) end
 
     -- Shown when a route exists but the guide isn't running (hudAlways).
-    startButton = Widgets:Button(body, "Start guide", 100, 20, function() ns.Route:Guide() end)
-    startButton:SetPoint("TOPLEFT", 6, -6)
+    startButton = Widgets:Button(body, "Start guide", 120, 22, function() ns.Route:Guide() end, "primary")
+    startButton:SetPoint("TOP", 0, -8)
     startButton:Hide()
 
     -- Live distance and arrow.
@@ -471,15 +546,17 @@ function HUD:UpdateLive()
     local radius = tonumber(ns.Settings().areaRadius) or 0
     local inArea = stop.area and d and radius > 0 and d <= radius
     if inArea then
-        stopWhere:SetText(where .. "  ·  in the area")
+        stopWhere:SetText(where .. "  ·  " .. Widgets.Colorize("in the area", ns.Colors.accent))
+        distText:SetText(Widgets.Colorize("here", ns.Colors.good))
     else
-        stopWhere:SetText(d and (where .. "  ·  " .. ns:FormatDistance(d)) or where)
+        stopWhere:SetText(where)
+        distText:SetText(d and ns:FormatDistance(d) or "")
     end
 
     local angle = not inArea and HUD.RelativeAngle(stop) or nil
     if angle then
         arrow:SetRotation(angle)
-        arrow:SetVertexColor(1, 1, 1, 1)
+        arrow:SetVertexColor(1, 0.86, 0.40, 1)
         arrow:Show()
     else
         -- Different map, or already in the search area: no useful direction.
@@ -495,9 +572,11 @@ function HUD:UpdateLive()
     end
 end
 
+--- What to show under the current stop: list of { text, colour }.
 local function objectiveTexts(stop)
     if stop.kind == "turnin" then
-        return { Widgets.Colorize("Hand in" .. (stop.npcName and (" to " .. stop.npcName) or " this quest"), ns.Colors.turnin) }
+        return { { text = Widgets.Colorize("Hand in" .. (stop.npcName and (" to " .. stop.npcName) or " this quest"),
+            ns.Colors.turnin), color = ns.Colors.turnin } }
     end
     local out = {}
     for _, o in ipairs(ns.QuestData:PendingObjectives(stop.questID)) do
@@ -505,10 +584,18 @@ local function objectiveTexts(stop)
         if not text:find("%d+/%d+") and (o.numRequired or 0) > 1 then
             text = string.format("%s: %d/%d", text, o.numFulfilled or 0, o.numRequired)
         end
-        table.insert(out, "- " .. text)
+        table.insert(out, { text = text, color = ns.Colors.quest })
     end
-    if #out == 0 then table.insert(out, "- In progress") end
+    if #out == 0 then table.insert(out, { text = "In progress", color = ns.Colors.dim }) end
     return out
+end
+
+--- Background opacity from settings, applied to the body and header.
+local function applyOpacity(s)
+    local a = math.max(0, math.min(1, ns.SafeNum(s.hudOpacity) or 0.75))
+    local hb, tb = Theme.hudBg, Theme.titleBg
+    bodyBg:SetColorTexture(hb[1], hb[2], hb[3], a)
+    headerBg:SetColorTexture(tb[1], tb[2], tb[3], math.min(1, a + 0.15))
 end
 
 function HUD:Refresh()
@@ -521,72 +608,94 @@ function HUD:Refresh()
 
     local s = S()
     frame:SetScale(math.max(0.5, math.min(2, ns.SafeNum(s.hudScale) or 1)))
+    applyOpacity(s)
     local state = ns.Route:Get()
     local stops = state.stops or {}
     local cur = math.min(state.current or 1, #stops)
     local guiding = state.guiding and true or false
 
     countText:SetText(string.format("%d/%d", cur, #stops))
-    titleText:SetText(guiding and "ROUTE" or "ROUTE  " .. Widgets.Colorize("(paused)", ns.Colors.dim))
+    titleText:SetText(guiding and "ROUTE" or "ROUTE  " .. Widgets.Colorize("paused", ns.Colors.dim))
+    progress:SetValue(#stops > 0 and (cur - 1) / #stops or 0)
     if guiding then skipButton:Show(); stopButton:Show() else skipButton:Hide(); stopButton:Hide() end
     if #stops > 0 then shelveButton:Show() else shelveButton:Hide() end
     if #ns.Route:ShelvedList() > 0 then restoreButton:Show() else restoreButton:Hide() end
-    collapseButton.text:SetText(s.hudCollapsed and "+" or "-")
+    collapseButton.icon:SetTexture(s.hudCollapsed and ICONS.expand or ICONS.collapse)
 
-    local height = 20
+    local height = HUD.HEADER_H
     if s.hudCollapsed then
         body:Hide()
     else
         body:Show()
-        local y = 4
+        local y = 6
         if guiding then
             startButton:Hide()
             currentBlock:Show()
             local stop = stops[cur]
             local c = stop.kind == "turnin" and ns.Colors.turnin or ns.Colors.quest
             stopTitle:SetText(stop.title or ("Quest " .. tostring(stop.questID)))
-            stopTitle:SetTextColor(c.r, c.g, c.b)
+            stopTitle:SetTextColor(ns.Colors.accent.r, ns.Colors.accent.g, ns.Colors.accent.b)
+            accentBar:SetColorTexture(c.r, c.g, c.b, 1)
             local texts = objectiveTexts(stop)
             local caution = stop.kind ~= "turnin" and ns.CautionText(stop.questLevel)
-            if caution then table.insert(texts, 1, caution) end
+            if caution then table.insert(texts, 1, { text = caution, color = ns.Colors.warn }) end
             for i, fs in ipairs(objectiveLines) do
-                if texts[i] then fs:SetText(texts[i]); fs:Show() else fs:Hide() end
+                local t = texts[i]
+                if t then
+                    fs:SetText(t.text); fs:Show()
+                    fs.bullet:SetColorTexture(t.color.r, t.color.g, t.color.b, 1); fs.bullet:Show()
+                else
+                    fs:Hide(); fs.bullet:Hide()
+                end
             end
             local lines = math.min(#texts, MAX_OBJECTIVE_LINES)
-            local blockH = 30 + lines * 13
+            local blockH = math.max(44, 7 + 14 + 2 + 12 + 4 + lines * OBJ_LINE_H + 6)
             currentBlock:SetHeight(blockH)
-            y = y + blockH + 4
+            y = y + blockH + 8
         else
             currentBlock:Hide()
             startButton:Show()
-            y = y + 28
+            y = y + 36
         end
 
         -- Upcoming stops (after the current one; all of them when paused).
         local want = math.max(0, math.min(MAX_UPCOMING, ns.SafeNum(s.hudUpcoming) or 3))
         local first = guiding and cur + 1 or cur
+        local any = want > 0 and stops[first] ~= nil
+        if any then
+            upNext:ClearAllPoints()
+            upNext:SetPoint("TOPLEFT", body, "TOPLEFT", 10, -y)
+            upNext:Show(); upNext.rule:Show()
+            y = y + 14
+        else
+            upNext:Hide(); upNext.rule:Hide()
+        end
         local shown = 0
         for i, row in ipairs(upcomingRows) do
             local idx = first + i - 1
             local st = stops[idx]
             if i <= want and st then
                 row.index, row.stop = idx, st
+                local caution = ns.LevelCaution(st.questLevel)
                 local kind = st.kind == "turnin" and ("  ·  " .. Widgets.Colorize("Hand in", ns.Colors.turnin))
-                    or (ns.LevelCaution(st.questLevel) and ("  " .. Widgets.Colorize("(!)", ns.Colors.warn)))
+                    or (caution and ("  " .. Widgets.Colorize("(!)", ns.Colors.warn)))
                     or ""
+                local dc = st.kind == "turnin" and ns.Colors.turnin or caution and ns.Colors.warn or ns.Colors.quest
+                row.dot:SetColorTexture(dc.r, dc.g, dc.b, 1)
                 row.text:SetText(string.format("%d. %s%s", idx, st.title or "?", kind))
+                if i % 2 == 0 then row.alt:Show() else row.alt:Hide() end
                 row:ClearAllPoints()
-                row:SetPoint("TOPLEFT", body, "TOPLEFT", 0, -y)
-                row:SetPoint("TOPRIGHT", body, "TOPRIGHT", 0, -y)
+                row:SetPoint("TOPLEFT", body, "TOPLEFT", 1, -y)
+                row:SetPoint("TOPRIGHT", body, "TOPRIGHT", -1, -y)
                 row:Show()
-                y = y + 16
+                y = y + ROW_H
                 shown = shown + 1
             else
                 row.index, row.stop = nil, nil
                 row:Hide()
             end
         end
-        y = y + 4
+        y = y + 6
         body:SetHeight(y)
         height = height + y
     end

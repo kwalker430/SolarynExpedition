@@ -186,6 +186,11 @@ local function makeWidget(kind)
     function w:GetValue() return w.value or 0 end
     function w:SetObeyStepOnDrag() return w end
     function w:SetThumbTexture(t) w.thumb = t; return w end
+    function w:SetOrientation(o) w.orientation = o; return w end
+    function w:EnableMouseWheel(v) w.mouseWheel = v and true or false; return w end
+    function w:SetFontString(fs) w.fontString = fs; return w end
+    function w:GetFontString() return w.fontString end
+    function w:SetPushedTextOffset() return w end
     function w:SetChecked(v) w.checked = v; return w end
     function w:GetChecked() return w.checked end
     function w:SetStatusBarTexture() return w end

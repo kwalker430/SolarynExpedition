@@ -1342,7 +1342,15 @@ check("collapsing hides the body and keeps the header", (function()
     local h = hf:GetHeight()
     ns.Settings().hudCollapsed = false
     hudRefresh()
-    return h == 20 and hf:GetHeight() > 20, tostring(h)
+    return h == HUD.HEADER_H and hf:GetHeight() > HUD.HEADER_H, tostring(h)
+end)())
+check("tracker background follows the opacity setting", (function()
+    ns.Settings().hudOpacity = 0.3
+    hudRefresh()
+    local c = hf.chromeBg.color
+    ns.Settings().hudOpacity = ns.Defaults.settings.hudOpacity
+    hudRefresh()
+    return c and math.abs(c[4] - 0.3) < 1e-9, c and tostring(c[4])
 end)())
 check("tracker off in options hides it", (function()
     ns.Settings().hud = false
@@ -2082,6 +2090,53 @@ check("panel cycles tabs", pcall(function()
     ns.Panel:SetTab("route"); ns.Panel:SetTab("zones"); ns.Panel:SetTab("next")
 end))
 check("options panel builds", pcall(function() ns.Options:Toggle(true); ns.Options:Toggle(false) end))
+check("options has a sidebar page for every category", (function()
+    ns.Options:Toggle(true)
+    for _, cat in ipairs(ns.Options.CATEGORIES) do
+        if not ns.Options:GetNavButton(cat.key) or not ns.Options:GetPage(cat.key) then
+            return false, "missing " .. cat.key
+        end
+    end
+    return true
+end)())
+check("clicking a category shows only its page and remembers it", (function()
+    ns.Options:GetNavButton("tracker"):Click()
+    local onlyTracker = true
+    for _, cat in ipairs(ns.Options.CATEGORIES) do
+        if ns.Options:GetPage(cat.key):IsShown() ~= (cat.key == "tracker") then onlyTracker = false end
+    end
+    local remembered = ns.Settings().optionsCategory == "tracker"
+    ns.Options:SelectCategory("bogus")
+    local fallback = ns.Options:GetPage("general"):IsShown()
+    return onlyTracker and remembered and fallback
+end)())
+check("clicking a toggle row flips its setting", (function()
+    local row
+    for _, c in ipairs(ns.Options:GetControls()) do if c.key == "mapPins" then row = c end end
+    if not row then return false, "no mapPins row" end
+    local before = ns.Settings().mapPins
+    row:Click()
+    local flipped = ns.Settings().mapPins == not before
+    row:Click()
+    return flipped and ns.Settings().mapPins == before and row.check:GetChecked() == before
+end)())
+check("the mouse wheel moves a slider one step", (function()
+    local row
+    for _, c in ipairs(ns.Options:GetControls()) do if c.key == "hudUpcoming" then row = c end end
+    local before = ns.Settings().hudUpcoming
+    local sl = row.slider
+    sl:GetScript("OnMouseWheel")(sl, 1)
+    sl:GetScript("OnValueChanged")(sl, sl:GetValue())
+    local after = ns.Settings().hudUpcoming
+    ns.Settings().hudUpcoming = before
+    row.Refresh()
+    ns.Options:Toggle(false)
+    return after == before + 1 and sl.orientation == "HORIZONTAL", tostring(after)
+end)())
+check("themed buttons keep their label", (function()
+    local b = ns.Widgets:Button(UIParent, "Go", 60, 22, nil, "primary")
+    return b:GetText() == "Go" and b:GetFontString() == b.label
+end)())
 check("minimap button exists", ns.MinimapButton:GetButton() ~= nil)
 check("minimap button clickable", pcall(function() ns.MinimapButton:GetButton():Click() end))
 
