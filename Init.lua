@@ -14,7 +14,7 @@ _G.SolarynExpedition = ns
 ns.ADDON_NAME = ADDON_NAME
 -- The TOC's "## Version" is the single source of truth.
 local getMetadata = (_G.C_AddOns and _G.C_AddOns.GetAddOnMetadata) or _G.GetAddOnMetadata
-ns.version = (getMetadata and getMetadata(ADDON_NAME, "Version")) or "1.2.0"
+ns.version = (getMetadata and getMetadata(ADDON_NAME, "Version")) or "1.3.0"
 
 -- Build/interface info, captured for the About line and for API capability
 -- probes. GetBuildInfo() is 5-tuples (version, build, date, tocVersion, isTest).
